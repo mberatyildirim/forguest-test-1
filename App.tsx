@@ -45,15 +45,28 @@ const App: React.FC = () => {
   const t = TRANSLATIONS[lang];
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const hotelId = params.get('h') || '59ffd86b-6ade-4782-8ec1-4d4fa78aefda';
-    const room = params.get('r');
-    
-    if (room) setRoomNumber(room);
-
     const fetchData = async () => {
       setLoading(true);
       
+      // 1. URL Analizi (Path tabanlı: /hotel_id/room_number)
+      const pathParts = window.location.pathname.split('/').filter(p => p);
+      const params = new URLSearchParams(window.location.search);
+      
+      let hotelId = '59ffd86b-6ade-4782-8ec1-4d4fa78aefda'; // Default
+      let room = '6';
+
+      // Eğer path yapısı varsa (forguest-test-1.vercel.app/UUID/ROOM)
+      if (pathParts.length >= 2) {
+        hotelId = pathParts[0];
+        room = pathParts[1];
+      } else {
+        // Fallback: Query parametreleri (?h=..&r=..)
+        hotelId = params.get('h') || hotelId;
+        room = params.get('r') || room;
+      }
+      
+      setRoomNumber(room);
+
       const { data: hotelData, error: hotelError } = await supabase
         .from('hotels')
         .select('*')
@@ -148,8 +161,8 @@ const App: React.FC = () => {
         ) : !hotel && currentView === 'home' ? (
           <div className="text-center py-20 bg-white rounded-[3rem] border border-slate-200 shadow-xl px-10">
             <Info className="mx-auto text-slate-300 mb-6" size={64} />
-            <h2 className="text-3xl font-black mb-2">QR Kod Bulunamadı</h2>
-            <p className="text-slate-500 leading-relaxed">Lütfen odanızdaki geçerli bir QR kodu taratarak sisteme giriş yapın.</p>
+            <h2 className="text-3xl font-black mb-2">Giriş Yapılamadı</h2>
+            <p className="text-slate-500 leading-relaxed">Lütfen odanızdaki QR kodu tekrar taratın veya geçerli bir bağlantı kullanın.</p>
           </div>
         ) : (
           <>

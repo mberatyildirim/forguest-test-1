@@ -162,8 +162,8 @@ const HotelPanel: React.FC = () => {
     try {
       setIsUploading(true);
       
-      // YENİ LINK YAPISI: forguest.io/hotel_id/room_number
-      const qrContent = `https://forguest.io/${hotelId}/${newRoomNumber}`;
+      // YENİ LINK YAPISI: domain.com/hotel_id/room_number
+      const qrContent = `https://forguest-test-1.vercel.app/${hotelId}/${newRoomNumber}`;
       const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrContent)}`;
       
       const response = await fetch(qrApiUrl);
@@ -344,7 +344,7 @@ const HotelPanel: React.FC = () => {
                      <button onClick={() => window.open(room.qr_url, '_blank')} className="w-full py-3 bg-slate-50 text-slate-900 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-slate-900 hover:text-white transition-all">
                         <Download size={16} /> QR İNDİR (HD)
                      </button>
-                     <p className="mt-3 text-[8px] text-slate-300 font-mono truncate">{`forguest.io/${hotelId}/${room.room_number}`}</p>
+                     <p className="mt-3 text-[8px] text-slate-300 font-mono truncate">{`forguest-test-1.vercel.app/${hotelId}/${room.room_number}`}</p>
                      <button onClick={async () => { if(confirm("Odayı silmek istediğinize emin misiniz?")) { await supabase.from('rooms').delete().eq('id', room.id); fetchRooms(hotelId!); } }} className="absolute -top-2 -right-2 p-3 bg-rose-500 text-white rounded-xl opacity-0 group-hover:opacity-100 transition-all shadow-lg"><Trash2 size={16} /></button>
                   </div>
                 ))}
@@ -426,7 +426,7 @@ const HotelPanel: React.FC = () => {
                 <QrCode size={40} />
               </div>
               <h3 className="text-2xl font-black text-slate-900 mb-2">Yeni Oda</h3>
-              <p className="text-slate-400 text-sm mb-8">QR Link: forguest.io/{hotelId}/...</p>
+              <p className="text-slate-400 text-sm mb-8">QR Link: forguest-test-1.vercel.app/{hotelId}/...</p>
               
               <input 
                 type="text" 
