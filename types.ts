@@ -1,0 +1,79 @@
+
+import React from 'react';
+
+export type UserRole = 'guest' | 'hotel_admin' | 'super_admin';
+
+export interface Hotel {
+  id: string;
+  name: string;
+  logo_url: string;
+  wifi_name: string;
+  wifi_pass: string;
+  checkout_time: string;
+  reception_phone: string;
+  whatsapp_number: string;
+  created_at?: string;
+}
+
+export interface Room {
+  id: string;
+  hotel_id: string;
+  room_number: string;
+  qr_url?: string;
+}
+
+// Fixed MenuItem properties to match constants.tsx and component usage
+export interface MenuItem {
+  id: string;
+  hotel_id?: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  type: 'food' | 'market';
+  image: string;
+  popular?: boolean;
+  is_available?: boolean;
+}
+
+// Added exported ServiceItem interface to fix missing import errors
+export interface ServiceItem {
+  id: string;
+  nameKey: string;
+  icon: React.ReactNode;
+  category: string;
+}
+
+export interface Order {
+  id: string;
+  hotel_id: string;
+  room_number: string;
+  total_amount: number;
+  status: 'pending' | 'preparing' | 'delivered' | 'cancelled';
+  items: any[];
+  created_at: string;
+}
+
+export interface ServiceRequest {
+  id: string;
+  hotel_id: string;
+  room_number: string;
+  service_type: string;
+  status: 'pending' | 'completed';
+  created_at: string;
+}
+
+export interface CartItem extends MenuItem {
+  quantity: number;
+}
+
+export type ViewState = 'home' | 'dining' | 'amenities' | 'chat' | 'cart' | 'info';
+export type PanelState = 'guest' | 'hotel_dashboard' | 'admin_dashboard';
+export type Language = 'tr' | 'en' | 'ar';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: Date;
+}
