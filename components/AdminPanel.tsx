@@ -1,23 +1,50 @@
 
-import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Hotel, Activity, Plus, Trash2, ExternalLink, Settings, Save, X, Building2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  LayoutDashboard, 
+  Hotel, 
+  Activity, 
+  Plus, 
+  Trash2, 
+  ExternalLink, 
+  Settings, 
+  Save, 
+  X, 
+  Building2, 
+  Upload, 
+  Loader2, 
+  CheckCircle,
+  TrendingUp,
+  Clock,
+  Globe,
+  DollarSign
+} from 'lucide-react';
+import { supabase, uploadFile } from '../lib/supabase';
 import { Hotel as HotelType } from '../types';
 
 const AdminPanel: React.FC = () => {
   const [hotels, setHotels] = useState<HotelType[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
-  const [newHotel, setNewHotel] = useState<Partial<HotelType>>({
-    name: '',
-    logo_url: '',
-    wifi_name: '',
-    wifi_pass: '',
-    checkout_time: '11:00',
-    reception_phone: ''
-  });
+  const [globalOrders, setGlobalOrders] = useState<any[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingHotel, setEditingHotel] = useState<Partial<HotelType> | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [view, setView] = useState<'dashboard' | 'hotels'>('dashboard');
+
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchHotels();
+    fetchGlobalOrders();
+
+    const channel = supabase
+      .channel('admin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+        fetchGlobalOrders();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchHotels = async () => {
@@ -25,151 +52,211 @@ const AdminPanel: React.FC = () => {
     if (data) setHotels(data);
   };
 
-  const handleAddHotel = async () => {
-    if (!newHotel.name) return;
-    const { error } = await supabase.from('hotels').insert([newHotel]);
-    if (!error) {
-      setIsAdding(false);
-      setNewHotel({ name: '', logo_url: '', wifi_name: '', wifi_pass: '', checkout_time: '11:00', reception_phone: '' });
-      fetchHotels();
+  const fetchGlobalOrders = async () => {
+    const { data } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        hotels (name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    
+    if (data) setGlobalOrders(data);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'logo' | 'banner') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      setIsUploading(true);
+      const path = `system/hotels/${Date.now()}_${file.name.replace(/\s/g, '_')}`;
+      const url = await uploadFile('resimler', file, path);
+      setEditingHotel(prev => ({ ...prev, [type === 'logo' ? 'logo_url' : 'banner_url']: url }));
+    } catch (err) {
+      alert("Resim yükleme hatası!");
+    } finally {
+      setIsUploading(false);
     }
   };
 
+  const saveHotel = async () => {
+    if (!editingHotel?.name) return;
+    
+    setIsUploading(true);
+    const { error } = await supabase.from('hotels').upsert(editingHotel);
+    
+    if (!error) {
+      setIsModalOpen(false);
+      setEditingHotel(null);
+      fetchHotels();
+    } else {
+      alert("Hata: " + error.message);
+    }
+    setIsUploading(false);
+  };
+
   const deleteHotel = async (id: string) => {
-    if (confirm("DİKKAT! Bu oteli ve bağlı tüm verileri (odalar, menüler) silmek üzeresiniz. Onaylıyor musunuz?")) {
+    if (confirm("Bu tesisi silmek istediğinize emin misiniz?")) {
       await supabase.from('hotels').delete().eq('id', id);
       fetchHotels();
     }
   };
 
+  const openEdit = (hotel?: HotelType) => {
+    setEditingHotel(hotel || {
+      name: '',
+      logo_url: '',
+      banner_url: '',
+      wifi_name: '',
+      wifi_pass: '',
+      checkout_time: '11:00',
+      reception_phone: '',
+      whatsapp_number: ''
+    });
+    setIsModalOpen(true);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0f1115] text-white flex">
-      {/* SaaS Sidebar */}
-      <div className="w-80 bg-[#16191f] border-r border-white/5 p-10 flex flex-col gap-12">
-        <div>
-          <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-r from-orange-500 to-rose-500 bg-clip-text text-transparent">forGuest <span className="text-white text-[10px] block opacity-30 uppercase tracking-[0.5em] mt-1 font-bold">PLATFORM ADMIN</span></h1>
+    <div className="min-h-screen bg-[#0a0c10] text-white flex font-inter">
+      {/* Sidebar */}
+      <div className="w-80 bg-[#11141b] border-r border-white/5 p-10 flex flex-col gap-12 sticky top-0 h-screen">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-black tracking-tighter bg-gradient-to-r from-orange-500 to-rose-500 bg-clip-text text-transparent">forGuest</h1>
+          <span className="text-[10px] opacity-30 uppercase tracking-[0.4em] font-bold">GLOBAL ADMIN</span>
         </div>
         
         <nav className="space-y-4">
-          <button className="w-full flex items-center gap-4 px-6 py-4 bg-white/5 border border-white/5 rounded-2xl font-black text-sm transition-all shadow-xl text-orange-500">
-            <LayoutDashboard size={22} /> Genel Durum
+          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-sm transition-all ${view === 'dashboard' ? 'bg-orange-600 text-white shadow-xl' : 'text-slate-500 hover:bg-white/5'}`}>
+            <LayoutDashboard size={20} /> Canlı Akış
           </button>
-          <button className="w-full flex items-center gap-4 px-6 py-4 hover:bg-white/5 rounded-2xl font-black text-sm text-slate-400 transition-all">
-            <Hotel size={22} /> Otel Listesi
-          </button>
-          <button className="w-full flex items-center gap-4 px-6 py-4 hover:bg-white/5 rounded-2xl font-black text-sm text-slate-400 transition-all">
-            <Activity size={22} /> Sistem Logları
+          <button onClick={() => setView('hotels')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-sm transition-all ${view === 'hotels' ? 'bg-orange-600 text-white shadow-xl' : 'text-slate-500 hover:bg-white/5'}`}>
+            <Hotel size={20} /> Tesis Ağı
           </button>
         </nav>
-
-        <div className="mt-auto bg-gradient-to-br from-slate-800 to-slate-900 rounded-[2rem] p-8 border border-white/5 shadow-2xl">
-           <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Sistem Sağlığı</p>
-           <div className="space-y-4">
-              <div className="flex items-center justify-between text-xs font-bold">
-                 <span>API</span>
-                 <span className="text-emerald-500">ON</span>
-              </div>
-              <div className="flex items-center justify-between text-xs font-bold">
-                 <span>DB</span>
-                 <span className="text-emerald-500">ON</span>
-              </div>
-           </div>
-        </div>
       </div>
 
-      {/* SaaS Content */}
-      <div className="flex-1 p-20 overflow-y-auto no-scrollbar">
-        <header className="flex justify-between items-end mb-16">
-          <div>
-            <h2 className="text-6xl font-black tracking-tight mb-4">Ağ Yönetimi</h2>
-            <p className="text-slate-400 font-medium text-xl">Platformunuzdaki tüm tesislerin kontrolü sizde.</p>
-          </div>
-          <button onClick={() => setIsAdding(true)} className="bg-orange-600 text-white px-10 py-5 rounded-[1.5rem] font-black flex items-center gap-3 hover:bg-orange-500 transition-all shadow-2xl shadow-orange-900/20 active:scale-95">
-            <Plus size={24} /> Yeni Tesis Ekle
-          </button>
-        </header>
+      <div className="flex-1 p-16 overflow-y-auto no-scrollbar">
+        {view === 'dashboard' ? (
+          <div className="animate-fade-in">
+             <header className="mb-12">
+                <h2 className="text-5xl font-black tracking-tight mb-2">Canlı Platform Akışı</h2>
+                <p className="text-slate-500 font-medium">Global ağdaki tüm aktif siparişler.</p>
+             </header>
 
-        <div className="grid grid-cols-3 gap-8 mb-16">
-          <div className="bg-[#1a1d23] border border-white/5 p-10 rounded-[3rem] shadow-2xl group hover:border-orange-500/50 transition-all">
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Toplam Tesis</p>
-            <p className="text-6xl font-black group-hover:text-orange-500 transition-colors">{hotels.length}</p>
-          </div>
-          <div className="bg-[#1a1d23] border border-white/5 p-10 rounded-[3rem] shadow-2xl">
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Aylık İstek</p>
-            <p className="text-6xl font-black">---</p>
-          </div>
-        </div>
-
-        <div className="bg-[#16191f] rounded-[3.5rem] border border-white/5 overflow-hidden shadow-[0_30px_100px_rgba(0,0,0,0.4)]">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-black/20 text-slate-500 text-[10px] font-black uppercase tracking-[0.4em]">
-                <th className="px-12 py-8">TESİS ADI & LOGO</th>
-                <th className="px-12 py-8">ALTYAPI BİLGİSİ</th>
-                <th className="px-12 py-8">DURUM</th>
-                <th className="px-12 py-8">KONTROLLER</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {hotels.map(hotel => (
-                <tr key={hotel.id} className="hover:bg-white/5 transition-colors group">
-                  <td className="px-12 py-10 font-black text-lg flex items-center gap-6">
-                    <div className="w-16 h-16 rounded-[1.2rem] overflow-hidden bg-slate-800 border border-white/10 group-hover:scale-110 transition-transform">
-                      <img src={hotel.logo_url} className="w-full h-full object-cover" />
-                    </div>
-                    {hotel.name}
-                  </td>
-                  <td className="px-12 py-10 text-slate-400 font-mono text-xs opacity-60">
-                    ID: {hotel.id}<br/>
-                    WF: {hotel.wifi_name}
-                  </td>
-                  <td className="px-12 py-10">
-                    <span className="px-4 py-1.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded-full uppercase tracking-widest border border-emerald-500/20">AKtif</span>
-                  </td>
-                  <td className="px-12 py-10">
-                    <div className="flex gap-3">
-                      <button onClick={() => window.open(`?h=${hotel.id}`, '_blank')} className="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all" title="Canlı İzle"><ExternalLink size={20} /></button>
-                      <button onClick={() => deleteHotel(hotel.id)} className="p-4 bg-rose-500/10 hover:bg-rose-500 rounded-2xl text-rose-500 hover:text-white transition-all" title="Tesis Sil"><Trash2 size={20} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {isAdding && (
-          <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-8 backdrop-blur-3xl">
-            <div className="bg-[#1a1d23] border border-white/10 rounded-[4rem] p-16 w-full max-w-2xl shadow-[0_0_150px_rgba(0,0,0,0.6)] animate-fade-in">
-              <h3 className="text-4xl font-black mb-12">Tesis Entegrasyonu</h3>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">Otel Marka Adı</label>
-                   <input type="text" placeholder="Hilton, Marriott vb." className="w-full p-6 bg-black/40 border-2 border-white/5 rounded-3xl outline-none focus:border-orange-500 font-bold transition-all" value={newHotel.name} onChange={e => setNewHotel({...newHotel, name: e.target.value})} />
+             <div className="bg-[#11141b] rounded-[3rem] border border-white/5 overflow-hidden shadow-2xl">
+                <div className="p-8 border-b border-white/5 flex justify-between items-center">
+                   <h3 className="text-lg font-black flex items-center gap-3">Son Hareketler</h3>
                 </div>
-                <div className="space-y-2">
-                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">Marka Logo URL</label>
-                   <input type="text" className="w-full p-6 bg-black/40 border-2 border-white/5 rounded-3xl outline-none focus:border-orange-500 font-bold transition-all" value={newHotel.logo_url} onChange={e => setNewHotel({...newHotel, logo_url: e.target.value})} />
+                <div className="divide-y divide-white/5">
+                   {globalOrders.map(order => (
+                     <div key={order.id} className="p-8 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                        <div className="flex items-center gap-8">
+                           <div className="w-14 h-14 bg-white/5 rounded-2xl flex flex-col items-center justify-center border border-white/10">
+                              <span className="text-[8px] opacity-40 font-black">ODA</span>
+                              <span className="text-xl font-black">{order.room_number}</span>
+                           </div>
+                           <div>
+                              <p className="text-xs font-black text-orange-500 uppercase tracking-widest mb-1">{order.hotels?.name || 'Yükleniyor...'}</p>
+                              <p className="text-base font-bold text-slate-200">{order.items?.length || 0} Ürün</p>
+                           </div>
+                        </div>
+                        <p className="text-2xl font-black text-white">₺{order.total_amount?.toLocaleString()}</p>
+                     </div>
+                   ))}
                 </div>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">WiFi ID</label>
-                    <input type="text" className="w-full p-6 bg-black/40 border-2 border-white/5 rounded-3xl" value={newHotel.wifi_name} onChange={e => setNewHotel({...newHotel, wifi_name: e.target.value})} />
+             </div>
+          </div>
+        ) : (
+          <div className="animate-fade-in">
+             <header className="flex justify-between items-end mb-12">
+                <div>
+                   <h2 className="text-5xl font-black tracking-tight mb-2">Tesis Yönetimi</h2>
+                </div>
+                <button onClick={() => openEdit()} className="bg-orange-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:bg-orange-500 transition-all shadow-xl">
+                   <Plus size={20} /> Yeni Tesis
+                </button>
+             </header>
+
+             <div className="grid grid-cols-1 gap-4">
+                {hotels.map(hotel => (
+                  <div key={hotel.id} className="bg-[#11141b] border border-white/5 rounded-[2.5rem] p-6 flex items-center justify-between group hover:border-orange-500/30 transition-all">
+                     <div className="flex items-center gap-8">
+                        <div className="w-16 h-16 bg-slate-800 rounded-2xl overflow-hidden border border-white/10 p-2">
+                           <img src={hotel.logo_url || "https://via.placeholder.com/150"} className="w-full h-full object-contain" />
+                        </div>
+                        <h4 className="text-xl font-black">{hotel.name}</h4>
+                     </div>
+                     <div className="flex gap-3">
+                        {/* PAYLAŞ / DIŞ BAĞLANTI BUTONU: Misafir ekranına (detay) gönderir */}
+                        <button 
+                          onClick={() => window.open(`/${hotel.id}/Lobby`, '_blank')} 
+                          className="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all" 
+                          title="Misafir Ekranını Aç"
+                        >
+                          <ExternalLink size={20} />
+                        </button>
+                        <button onClick={() => openEdit(hotel)} className="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-orange-500 transition-all"><Settings size={20} /></button>
+                        <button onClick={() => deleteHotel(hotel.id)} className="p-4 bg-rose-500/10 hover:bg-rose-500 rounded-2xl text-rose-500 hover:text-white transition-all"><Trash2 size={20} /></button>
+                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">WiFi Key</label>
-                    <input type="text" className="w-full p-6 bg-black/40 border-2 border-white/5 rounded-3xl" value={newHotel.wifi_pass} onChange={e => setNewHotel({...newHotel, wifi_pass: e.target.value})} />
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-6 mt-16">
-                <button onClick={() => setIsAdding(false)} className="flex-1 py-6 font-black text-slate-500 hover:text-white transition-colors">Vazgeç</button>
-                <button onClick={handleAddHotel} className="flex-[2] bg-orange-600 text-white py-6 rounded-[2rem] font-black text-xl shadow-2xl shadow-orange-900/30 hover:bg-orange-500 transition-all">Sisteme Kaydet</button>
-              </div>
-            </div>
+                ))}
+             </div>
           </div>
         )}
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-8 backdrop-blur-3xl overflow-y-auto">
+          <div className="bg-[#11141b] border border-white/10 rounded-[3.5rem] p-12 w-full max-w-2xl shadow-2xl my-auto">
+            <div className="flex justify-between items-center mb-10">
+               <h3 className="text-3xl font-black">{editingHotel?.id ? 'Tesis Düzenle' : 'Yeni Tesis'}</h3>
+               <button onClick={() => setIsModalOpen(false)} className="p-3 bg-white/5 rounded-full"><X/></button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4 md:col-span-2">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">Tesis Adı</label>
+                 <input type="text" className="w-full p-5 bg-black/40 border-2 border-white/5 rounded-2xl outline-none focus:border-orange-500 font-bold" value={editingHotel?.name} onChange={e => setEditingHotel({...editingHotel, name: e.target.value})} />
+              </div>
+
+              <div className="space-y-4">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">Logo</label>
+                 <div onClick={() => logoInputRef.current?.click()} className="w-full aspect-video bg-black/40 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-all relative overflow-hidden">
+                    {editingHotel?.logo_url ? <img src={editingHotel.logo_url} className="w-full h-full object-contain p-4" /> : <Upload className="opacity-20" />}
+                 </div>
+                 <input type="file" ref={logoInputRef} className="hidden" onChange={e => handleImageUpload(e, 'logo')} />
+              </div>
+
+              <div className="space-y-4">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">WhatsApp Numarası</label>
+                 <input type="text" placeholder="905551234567" className="w-full p-4 bg-black/40 border-2 border-white/5 rounded-2xl" value={editingHotel?.whatsapp_number} onChange={e => setEditingHotel({...editingHotel, whatsapp_number: e.target.value})} />
+              </div>
+
+              <div className="space-y-4">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">WiFi Şifre</label>
+                 <input type="text" className="w-full p-4 bg-black/40 border-2 border-white/5 rounded-2xl" value={editingHotel?.wifi_pass} onChange={e => setEditingHotel({...editingHotel, wifi_pass: e.target.value})} />
+              </div>
+
+              <div className="space-y-4 md:col-span-2">
+                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-4">Banner Görseli (URL veya Yükle)</label>
+                 <div onClick={() => bannerInputRef.current?.click()} className="w-full h-32 bg-black/40 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-all relative overflow-hidden">
+                    {editingHotel?.banner_url ? <img src={editingHotel.banner_url} className="w-full h-full object-cover" /> : <Upload className="opacity-20" />}
+                 </div>
+                 <input type="file" ref={bannerInputRef} className="hidden" onChange={e => handleImageUpload(e, 'banner')} />
+              </div>
+            </div>
+
+            <div className="flex gap-4 mt-12">
+              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-5 font-black text-slate-500">Kapat</button>
+              <button onClick={saveHotel} disabled={isUploading} className="flex-[2] bg-orange-600 text-white py-5 rounded-2xl font-black text-xl shadow-2xl hover:bg-orange-500 transition-all disabled:opacity-50">
+                {isUploading ? <Loader2 className="animate-spin mx-auto" /> : 'Değişiklikleri Kaydet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,7 @@ export interface Hotel {
   id: string;
   name: string;
   logo_url: string;
+  banner_url?: string; // Yeni alan
   wifi_name: string;
   wifi_pass: string;
   checkout_time: string;
@@ -22,7 +23,6 @@ export interface Room {
   qr_url?: string;
 }
 
-// Fixed MenuItem properties to match constants.tsx and component usage
 export interface MenuItem {
   id: string;
   hotel_id?: string;
@@ -36,7 +36,6 @@ export interface MenuItem {
   is_available?: boolean;
 }
 
-// Added exported ServiceItem interface to fix missing import errors
 export interface ServiceItem {
   id: string;
   nameKey: string;
@@ -52,6 +51,7 @@ export interface Order {
   status: 'pending' | 'preparing' | 'delivered' | 'cancelled';
   items: any[];
   created_at: string;
+  hotels?: { name: string }; // Join için eklendi
 }
 
 export interface ServiceRequest {
@@ -59,8 +59,9 @@ export interface ServiceRequest {
   hotel_id: string;
   room_number: string;
   service_type: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'completed' | 'cancelled';
   created_at: string;
+  hotels?: { name: string }; // Join için eklendi
 }
 
 export interface CartItem extends MenuItem {
