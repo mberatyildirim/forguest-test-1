@@ -189,11 +189,11 @@ const AdminPanel: React.FC = () => {
                         <h4 className="text-xl font-black">{hotel.name}</h4>
                      </div>
                      <div className="flex gap-3">
-                        {/* PAYLAŞ / DIŞ BAĞLANTI BUTONU: Misafir ekranına (detay) gönderir */}
+                        {/* OTEL ADMİN PANELİNE GÖNDEREN BUTON */}
                         <button 
-                          onClick={() => window.open(`/${hotel.id}/Lobby`, '_blank')} 
+                          onClick={() => window.open(`/otel-admin/${hotel.id}`, '_blank')} 
                           className="p-4 bg-white/5 hover:bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-all" 
-                          title="Misafir Ekranını Aç"
+                          title="Otel Yönetim Panelini Aç"
                         >
                           <ExternalLink size={20} />
                         </button>
