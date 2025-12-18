@@ -20,24 +20,27 @@ import {
   LogOut,
   X,
   Loader2,
-  Upload
+  Upload,
+  HandPlatter,
+  WashingMachine
 } from 'lucide-react';
 import { supabase, uploadFile, uploadBlob } from '../lib/supabase';
-import { MenuItem, Order, Room } from '../types';
+import { MenuItem, Order, Room, Hotel, ServiceRequest } from '../types';
+import { TRANSLATIONS } from '../constants';
 
 const HotelPanel: React.FC = () => {
   const [view, setView] = useState<'orders' | 'menu' | 'rooms'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
+  const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [hotel, setHotel] = useState<Hotel | null>(null);
   const [hotelId, setHotelId] = useState<string | null>(null);
   
-  // Modal States
   const [isEditingMenu, setIsEditingMenu] = useState(false);
   const [isAddingRoom, setIsAddingRoom] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
-  // Form States
   const [newRoomNumber, setNewRoomNumber] = useState('');
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({ 
     name: '', 
@@ -59,35 +62,49 @@ const HotelPanel: React.FC = () => {
       
       if (!hId) {
         const { data: hotels } = await supabase.from('hotels').select('id').limit(1);
-        if (hotels && hotels[0]) {
-          hId = hotels[0].id;
-        } else {
-          hId = '59ffd86b-6ade-4782-8ec1-4d4fa78aefda';
-        }
+        if (hotels && hotels[0]) hId = hotels[0].id;
+        else hId = '59ffd86b-6ade-4782-8ec1-4d4fa78aefda';
       }
 
       setHotelId(hId);
       if (hId) {
-        fetchOrders(hId);
-        fetchMenu(hId);
-        fetchRooms(hId);
+        // Otel bilgilerini çek
+        const { data: hotelData } = await supabase.from('hotels').select('*').eq('id', hId).single();
+        if (hotelData) setHotel(hotelData);
+
+        fetchData(hId);
       }
     };
     init();
 
-    const orderSub = supabase
-      .channel('orders-live')
+    const channel = supabase
+      .channel('hotel-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
         if (hotelId) fetchOrders(hotelId);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => {
+        if (hotelId) fetchServiceRequests(hotelId);
+      })
       .subscribe();
 
-    return () => { supabase.removeChannel(orderSub); };
+    return () => { supabase.removeChannel(channel); };
   }, [hotelId]);
+
+  const fetchData = (hId: string) => {
+    fetchOrders(hId);
+    fetchServiceRequests(hId);
+    fetchMenu(hId);
+    fetchRooms(hId);
+  };
 
   const fetchOrders = async (hId: string) => {
     const { data } = await supabase.from('orders').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
     if (data) setOrders(data);
+  };
+
+  const fetchServiceRequests = async (hId: string) => {
+    const { data } = await supabase.from('service_requests').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
+    if (data) setServiceRequests(data);
   };
 
   const fetchMenu = async (hId: string) => {
@@ -103,17 +120,13 @@ const HotelPanel: React.FC = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !hotelId) return;
-
     try {
       setIsUploading(true);
       const fileName = `${hotelId}/products/${Date.now()}-${file.name.replace(/\s/g, '_')}`;
       const publicUrl = await uploadFile('resimler', file, fileName);
       setNewItem(prev => ({ ...prev, image: publicUrl }));
-    } catch (err) {
-      alert("Görsel yüklenemedi!");
-    } finally {
-      setIsUploading(false);
-    }
+    } catch (err) { alert("Görsel yüklenemedi!"); }
+    finally { setIsUploading(false); }
   };
 
   const saveMenuItem = async () => {
@@ -121,29 +134,17 @@ const HotelPanel: React.FC = () => {
       alert("Lütfen ürün ismi ve görselini eksiksiz girin.");
       return;
     }
-    
     try {
       setIsUploading(true);
-      const payload = { 
-        ...newItem, 
-        hotel_id: hotelId,
-        price: Number(newItem.price) || 0
-      };
-
+      const payload = { ...newItem, hotel_id: hotelId, price: Number(newItem.price) || 0 };
       const { error } = await supabase.from('menu_items').upsert(payload);
-      
       if (!error) {
         setIsEditingMenu(false);
         setNewItem({ name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains' });
         fetchMenu(hotelId);
-      } else {
-        throw error;
       }
-    } catch (err: any) {
-      alert("Menü kaydedilemedi: " + err.message);
-    } finally {
-      setIsUploading(false);
-    }
+    } catch (err: any) { alert("Menü kaydedilemedi: " + err.message); }
+    finally { setIsUploading(false); }
   };
 
   const deleteMenuItem = async (id: string) => {
@@ -154,49 +155,40 @@ const HotelPanel: React.FC = () => {
   };
 
   const handleAddRoom = async () => {
-    if (!newRoomNumber || !hotelId) {
-      alert("Oda numarası veya otel bilgisi eksik!");
-      return;
-    }
-
+    if (!newRoomNumber || !hotelId) return;
     try {
       setIsUploading(true);
-      
-      // YENİ LINK YAPISI: domain.com/hotel_id/room_number
       const qrContent = `https://forguest-test-1.vercel.app/${hotelId}/${newRoomNumber}`;
       const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrContent)}`;
-      
       const response = await fetch(qrApiUrl);
-      if (!response.ok) throw new Error("QR API hatası");
       const blob = await response.blob();
-      
       const qrFileName = `${hotelId}/qr/room-${newRoomNumber}-${Date.now()}.png`;
       const qrPublicUrl = await uploadBlob('qr', blob, qrFileName);
-
-      const { error } = await supabase.from('rooms').insert({ 
-        hotel_id: hotelId, 
-        room_number: newRoomNumber,
-        qr_url: qrPublicUrl
-      });
-
+      const { error } = await supabase.from('rooms').insert({ hotel_id: hotelId, room_number: newRoomNumber, qr_url: qrPublicUrl });
       if (!error) {
         setIsAddingRoom(false);
         setNewRoomNumber('');
         fetchRooms(hotelId);
-      } else {
-        throw error;
       }
-    } catch (err: any) {
-      alert("Oda oluşturulamadı: " + err.message);
-    } finally {
-      setIsUploading(false);
-    }
+    } catch (err: any) { alert("Oda oluşturulamadı: " + err.message); }
+    finally { setIsUploading(false); }
   };
 
   const updateOrderStatus = async (orderId: string, status: string) => {
     await supabase.from('orders').update({ status }).eq('id', orderId);
     if (hotelId) fetchOrders(hotelId);
   };
+
+  const updateServiceStatus = async (requestId: string, status: string) => {
+    await supabase.from('service_requests').update({ status }).eq('id', requestId);
+    if (hotelId) fetchServiceRequests(hotelId);
+  };
+
+  // Birleşik Liste: Siparişler ve Hizmet Talepleri
+  const combinedOrders = [
+    ...orders.map(o => ({ ...o, entryType: 'order' })),
+    ...serviceRequests.map(s => ({ ...s, entryType: 'service' }))
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const totalRevenue = orders.filter(o => o.status === 'delivered').reduce((acc, o) => acc + o.total_amount, 0);
 
@@ -207,16 +199,18 @@ const HotelPanel: React.FC = () => {
         <div className="flex items-center gap-4 px-2">
            <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-xl"><ChefHat size={28} /></div>
            <div>
-              <h1 className="text-xl font-black tracking-tight">Otel Paneli</h1>
+              <h1 className="text-xl font-black tracking-tight leading-none mb-1">{hotel?.name || 'Otel Paneli'}</h1>
               <span className="text-[9px] text-emerald-500 font-black uppercase tracking-widest bg-emerald-50 px-2 py-0.5 rounded-full">YÖNETİCİ MODU</span>
            </div>
         </div>
         
         <nav className="space-y-2">
           <button onClick={() => setView('orders')} className={`w-full flex items-center justify-between px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'orders' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}>
-            <div className="flex items-center gap-3"><ClipboardList size={20} /> Canlı Siparişler</div>
-            {orders.filter(o => o.status === 'pending').length > 0 && (
-              <span className="bg-white text-orange-600 px-2 py-0.5 rounded-lg text-[10px] animate-pulse">{orders.filter(o => o.status === 'pending').length}</span>
+            <div className="flex items-center gap-3"><ClipboardList size={20} /> Siparişler & Talepler</div>
+            {(orders.filter(o => o.status === 'pending').length + serviceRequests.filter(s => s.status === 'pending').length) > 0 && (
+              <span className="bg-white text-orange-600 px-2 py-0.5 rounded-lg text-[10px] animate-pulse">
+                {orders.filter(o => o.status === 'pending').length + serviceRequests.filter(s => s.status === 'pending').length}
+              </span>
             )}
           </button>
           <button onClick={() => setView('menu')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'menu' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Package size={20} /> Menü Yönetimi</button>
@@ -241,44 +235,69 @@ const HotelPanel: React.FC = () => {
         {view === 'orders' && (
           <div className="animate-fade-in space-y-8">
             <div className="flex justify-between items-center">
-               <h2 className="text-4xl font-black text-slate-900">Sipariş Talepleri</h2>
-               <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
-                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Sistem Aktif
+               <h2 className="text-4xl font-black text-slate-900">Canlı Akış</h2>
+               <div className="flex items-center gap-4">
+                  <span className="text-xs font-bold text-slate-400">Bekleyen: {orders.filter(o => o.status === 'pending').length + serviceRequests.filter(s => s.status === 'pending').length}</span>
+                  <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Sistem Aktif
+                  </div>
                </div>
             </div>
 
             <div className="space-y-4">
-              {orders.length === 0 ? (
+              {combinedOrders.length === 0 ? (
                 <div className="py-24 text-center bg-white rounded-[2.5rem] border border-slate-200 shadow-sm">
-                   <p className="text-slate-400 font-bold text-lg">Bekleyen sipariş yok.</p>
+                   <p className="text-slate-400 font-bold text-lg">Henüz bir aktivite yok.</p>
                 </div>
-              ) : orders.map(order => (
-                <div key={order.id} className={`bg-white border-2 rounded-[2.5rem] p-8 shadow-sm flex items-center justify-between transition-all ${order.status === 'pending' ? 'border-orange-500 shadow-lg shadow-orange-50' : 'border-slate-100 opacity-90'}`}>
+              ) : combinedOrders.map((entry: any) => (
+                <div key={entry.id} className={`bg-white border-2 rounded-[2.5rem] p-8 shadow-sm flex items-center justify-between transition-all ${entry.status === 'pending' ? 'border-orange-500 shadow-lg shadow-orange-50' : 'border-slate-100 opacity-90'}`}>
                   <div className="flex items-center gap-10">
-                     <div className="bg-slate-50 w-20 h-20 rounded-2xl flex flex-col items-center justify-center border border-slate-100 shadow-inner">
+                     <div className={`w-20 h-20 rounded-2xl flex flex-col items-center justify-center border shadow-inner ${entry.entryType === 'service' ? 'bg-indigo-50 border-indigo-100' : 'bg-slate-50 border-slate-100'}`}>
                         <span className="text-[9px] text-slate-400 font-black uppercase">ODA</span>
-                        <span className="text-3xl font-black text-slate-900">{order.room_number}</span>
+                        <span className="text-3xl font-black text-slate-900">{entry.room_number}</span>
                      </div>
                      <div>
-                        <p className="text-lg font-black text-slate-900 mb-1">
-                          {order.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}
-                        </p>
+                        <div className="flex items-center gap-2 mb-1">
+                          {entry.entryType === 'service' ? (
+                            <span className="bg-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest">HİZMET TALEBİ</span>
+                          ) : (
+                            <span className="bg-orange-600 text-white text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest">SİPARİŞ</span>
+                          )}
+                          <p className="text-lg font-black text-slate-900">
+                            {entry.entryType === 'service' 
+                              ? (TRANSLATIONS.tr.serviceNames[entry.service_type as keyof typeof TRANSLATIONS.tr.serviceNames] || entry.service_type)
+                              : entry.items.map((i: any) => `${i.name} x${i.quantity}`).join(', ')}
+                          </p>
+                        </div>
                         <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1 uppercase tracking-wider">
-                          <Clock size={12} /> {new Date(order.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                          <Clock size={12} /> {new Date(entry.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                      </div>
                   </div>
 
                   <div className="flex items-center gap-8">
-                     <p className="text-2xl font-black text-slate-900">₺{order.total_amount}</p>
+                     <p className="text-2xl font-black text-slate-900">
+                       {entry.entryType === 'service' ? 'ÜCRETSİZ' : `₺${entry.total_amount}`}
+                     </p>
                      <div className="flex gap-2">
-                        {order.status === 'pending' && (
-                          <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[11px] shadow-lg hover:bg-orange-600 transition-all uppercase tracking-wider">Hazırla</button>
+                        {entry.status === 'pending' && (
+                          <button 
+                            onClick={() => entry.entryType === 'service' ? updateServiceStatus(entry.id, 'completed') : updateOrderStatus(entry.id, 'preparing')} 
+                            className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-[11px] shadow-lg hover:bg-orange-600 transition-all uppercase tracking-wider"
+                          >
+                            {entry.entryType === 'service' ? 'TAMAMLA' : 'HAZIRLA'}
+                          </button>
                         )}
-                        {order.status === 'preparing' && (
-                          <button onClick={() => updateOrderStatus(order.id, 'delivered')} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-black text-[11px] shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-wider">Teslim Et</button>
+                        {entry.status === 'preparing' && (
+                          <button onClick={() => updateOrderStatus(entry.id, 'delivered')} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-black text-[11px] shadow-lg hover:bg-emerald-700 transition-all uppercase tracking-wider">TESLİM ET</button>
                         )}
-                        <button onClick={() => updateOrderStatus(order.id, 'cancelled')} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:text-rose-500 hover:bg-rose-50 transition-all"><XCircle size={22} /></button>
+                        {entry.status === 'completed' || entry.status === 'delivered' ? (
+                          <div className="flex items-center gap-2 text-emerald-500 font-black text-[10px] px-4 py-2 bg-emerald-50 rounded-xl">
+                            <CheckCircle size={16} /> BİTTİ
+                          </div>
+                        ) : (
+                          <button onClick={() => entry.entryType === 'service' ? updateServiceStatus(entry.id, 'cancelled') : updateOrderStatus(entry.id, 'cancelled')} className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:text-rose-500 hover:bg-rose-50 transition-all"><XCircle size={22} /></button>
+                        )}
                      </div>
                   </div>
                 </div>
