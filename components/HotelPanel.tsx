@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ClipboardList, ChefHat, QrCode, Settings, CheckCircle, Package, Save, Plus, Trash2, 
-  X, Loader2, Upload, Home, Info, ExternalLink
+  X, Loader2, Upload, Home, Info, ExternalLink, Layers, Download, Edit3, Image as ImageIcon
 } from 'lucide-react';
 import { supabase, uploadFile, uploadBlob } from '../lib/supabase';
 import { MenuItem, Order, Room, Hotel, ServiceRequest, PanelState } from '../types';
@@ -22,14 +22,15 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   
   const [isEditingMenu, setIsEditingMenu] = useState(false);
   const [isAddingRoom, setIsAddingRoom] = useState(false);
+  const [isBulkAdding, setIsBulkAdding] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // Görsel bazlı loading durumları
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   
   const [newRoomNumber, setNewRoomNumber] = useState('');
+  const [bulkRange, setBulkRange] = useState({ start: 1, end: 10 });
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({ 
     name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains'
   });
@@ -41,12 +42,10 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   useEffect(() => {
     if (hotelIdProp) {
       loadAllData(hotelIdProp);
-      
       const channel = supabase.channel(`hotel-${hotelIdProp}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `hotel_id=eq.${hotelIdProp}` }, () => fetchOrders(hotelIdProp))
         .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests', filter: `hotel_id=eq.${hotelIdProp}` }, () => fetchServiceRequests(hotelIdProp))
         .subscribe();
-
       return () => { supabase.removeChannel(channel); };
     }
   }, [hotelIdProp]);
@@ -55,12 +54,7 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     setIsLoadingData(true);
     const { data: hotelData } = await supabase.from('hotels').select('*').eq('id', hId).single();
     if (hotelData) setHotel(hotelData);
-    await Promise.all([
-      fetchOrders(hId),
-      fetchServiceRequests(hId),
-      fetchMenu(hId),
-      fetchRooms(hId)
-    ]);
+    await Promise.all([fetchOrders(hId), fetchServiceRequests(hId), fetchMenu(hId), fetchRooms(hId)]);
     setIsLoadingData(false);
   };
 
@@ -80,8 +74,13 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   };
 
   const fetchRooms = async (hId: string) => {
-    const { data } = await supabase.from('rooms').select('*').eq('hotel_id', hId).order('room_number', { ascending: true });
-    if (data) setRooms(data);
+    const { data } = await supabase.from('rooms').select('*').eq('hotel_id', hId).order('room_number', { ascending: true }, );
+    const sorted = (data || []).sort((a, b) => {
+      const numA = parseInt(a.room_number.replace(/\D/g, '')) || 0;
+      const numB = parseInt(b.room_number.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+    setRooms(sorted);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'menu' | 'logo' | 'banner') => {
@@ -94,66 +93,150 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
 
       const fileName = `${hotelIdProp}/${target}/${Date.now()}-${file.name.replace(/\s/g, '_')}`;
       const url = await uploadFile('resimler', file, fileName);
-      
       if (target === 'menu') setNewItem(prev => ({ ...prev, image: url }));
       else if (target === 'logo') setHotel(prev => prev ? ({ ...prev, logo_url: url }) : null);
       else if (target === 'banner') setHotel(prev => prev ? ({ ...prev, banner_url: url }) : null);
     } catch (err) { alert("Resim yükleme hatası!"); }
-    finally { 
-      setUploadingLogo(false);
-      setUploadingBanner(false);
+    finally { setUploadingLogo(false); setUploadingBanner(false); setIsUploading(false); }
+  };
+
+  const createAndUploadQR = async (roomNo: string): Promise<string> => {
+    const appBaseUrl = window.location.origin;
+    const qrContent = `${appBaseUrl}/${hotelIdProp}/${roomNo}`;
+    const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrContent)}`;
+    
+    const res = await fetch(qrApiUrl);
+    if (!res.ok) throw new Error("QR API error");
+    const blob = await res.blob();
+    
+    const publicUrl = await uploadBlob('qr', blob, `${hotelIdProp}/qr/${roomNo}.png`);
+    return publicUrl;
+  };
+
+  const handleAddSingleRoom = async () => {
+    if (!newRoomNumber || !hotelIdProp) return;
+    setIsUploading(true);
+    try {
+      const qrUrl = await createAndUploadQR(newRoomNumber);
+      const { error } = await supabase.from('rooms').insert({
+        hotel_id: hotelIdProp,
+        room_number: newRoomNumber,
+        qr_url: qrUrl
+      });
+      if (error) throw error;
+      
+      setIsAddingRoom(false);
+      setNewRoomNumber('');
+      fetchRooms(hotelIdProp);
+    } catch (e) {
+      console.error(e);
+      alert("Oda oluşturulurken hata!");
+    } finally {
       setIsUploading(false);
     }
   };
 
-  const saveHotelSettings = async () => {
-    if (!hotel) return;
+  const handleBulkAdd = async () => {
+    if (bulkRange.start > bulkRange.end) return alert("Başlangıç değeri bitişten büyük olamaz!");
+    const count = bulkRange.end - bulkRange.start + 1;
+    if (count > 200) return alert("Tek seferde en fazla 200 oda oluşturulabilir.");
+
     setIsUploading(true);
-    const { error } = await supabase.from('hotels').update({
-      name: hotel.name,
-      logo_url: hotel.logo_url,
-      banner_url: hotel.banner_url,
-      wifi_name: hotel.wifi_name,
-      wifi_pass: hotel.wifi_pass,
-      whatsapp_number: hotel.whatsapp_number,
-      checkout_time: hotel.checkout_time
-    }).eq('id', hotel.id);
-    if (!error) alert("Ayarlar başarıyla kaydedildi!");
-    else alert("Hata: " + error.message);
-    setIsUploading(false);
+    const roomBatch: any[] = [];
+    
+    try {
+      for (let i = bulkRange.start; i <= bulkRange.end; i++) {
+        const roomNo = i.toString();
+        if (rooms.some(r => r.room_number === roomNo)) continue;
+        
+        const qrUrl = await createAndUploadQR(roomNo);
+        roomBatch.push({
+          hotel_id: hotelIdProp,
+          room_number: roomNo,
+          qr_url: qrUrl
+        });
+      }
+
+      if (roomBatch.length > 0) {
+        const { error } = await supabase.from('rooms').insert(roomBatch);
+        if (error) throw error;
+      }
+
+      setIsBulkAdding(false);
+      alert(`${roomBatch.length} oda başarıyla oluşturuldu.`);
+      fetchRooms(hotelIdProp);
+    } catch (e) {
+      console.error("Bulk Error:", e);
+      alert("Toplu oluşturma sırasında hata! Lütfen tekrar deneyin.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDownloadQR = async (room: Room) => {
+    if (!room.qr_url) return;
+    try {
+      const response = await fetch(room.qr_url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `oda-${room.room_number}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("İndirme başarısız!");
+    }
+  };
+
+  const saveHotelSettings = async () => {
+    if (!hotel || !hotelIdProp) return;
+    setIsUploading(true);
+    try {
+      const { error } = await supabase
+        .from('hotels')
+        .update({
+          name: hotel.name,
+          logo_url: hotel.logo_url,
+          banner_url: hotel.banner_url,
+          wifi_name: hotel.wifi_name,
+          wifi_pass: hotel.wifi_pass,
+          checkout_time: hotel.checkout_time,
+          whatsapp_number: hotel.whatsapp_number,
+        })
+        .eq('id', hotelIdProp);
+
+      if (error) throw error;
+      alert("Ayarlar başarıyla kaydedildi!");
+    } catch (err) {
+      console.error(err);
+      alert("Ayarlar kaydedilirken bir hata oluştu!");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const saveMenuItem = async () => {
-    if (!hotelIdProp || !newItem.name || !newItem.image) return alert("Eksik bilgi!");
-    setIsUploading(true);
-    const { error } = await supabase.from('menu_items').upsert({ ...newItem, hotel_id: hotelIdProp });
-    if (!error) {
-      setIsEditingMenu(false);
-      setNewItem({ name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains' });
-      fetchMenu(hotelIdProp);
-    }
-    setIsUploading(false);
-  };
-
-  const handleAddRoom = async () => {
-    if (!newRoomNumber || !hotelIdProp) return;
+    if (!newItem.name || !hotelIdProp) return alert("Ürün adı gereklidir!");
     setIsUploading(true);
     try {
-      // Dinamik URL yapısı
-      const appBaseUrl = "https://forguest-test-1.vercel.app";
-      const qrContent = `${appBaseUrl}/${hotelIdProp}/${newRoomNumber}`;
+      const itemToSave = { ...newItem, hotel_id: hotelIdProp };
+      const { error } = await supabase.from('menu_items').upsert(itemToSave);
+      if (error) throw error;
       
-      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrContent)}`;
-      const res = await fetch(qrApiUrl);
-      const blob = await res.blob();
-      const publicUrl = await uploadBlob('qr', blob, `${hotelIdProp}/qr/${newRoomNumber}.png`);
-      
-      await supabase.from('rooms').insert({ hotel_id: hotelIdProp, room_number: newRoomNumber, qr_url: publicUrl });
-      setIsAddingRoom(false);
-      setNewRoomNumber('');
-      fetchRooms(hotelIdProp);
-    } catch (e) { alert("QR Hatası!"); }
-    finally { setIsUploading(false); }
+      setIsEditingMenu(false);
+      setNewItem({ 
+        name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains'
+      });
+      fetchMenu(hotelIdProp);
+    } catch (e) {
+      console.error(e);
+      alert("Ürün kaydedilirken hata!");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const updateStatus = async (id: string, table: 'orders' | 'service_requests', status: string) => {
@@ -170,61 +253,65 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-12">
         <Loader2 className="animate-spin text-orange-600 mb-6" size={48} />
-        <p className="font-black text-slate-400 uppercase tracking-widest text-xs">Veriler Yükleniyor...</p>
+        <p className="font-black text-slate-400 uppercase tracking-widest text-xs">Syncing Hotel Data...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex font-inter">
-      {/* Sidebar */}
-      <aside className="w-80 bg-white border-r border-slate-200 p-8 flex flex-col gap-10 sticky top-0 h-screen">
+    <div className="min-h-screen bg-[#f8f9fc] flex font-inter text-slate-900">
+      <aside className="w-80 bg-white border-r border-slate-200 p-10 flex flex-col gap-12 sticky top-0 h-screen shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center text-white"><ChefHat size={28}/></div>
-          <div className="flex-1 min-w-0"><h1 className="text-xl font-black truncate">{hotel?.name}</h1><p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Otel Paneli</p></div>
+          <div className="w-12 h-12 bg-slate-900 rounded-[1.2rem] flex items-center justify-center text-white shadow-xl shadow-slate-900/10">
+            <ChefHat size={26}/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-black truncate tracking-tighter uppercase italic">for<span className="text-orange-600">Guest</span></h1>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Management Suite</p>
+          </div>
         </div>
+        
         <nav className="flex-1 space-y-2">
-          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'orders' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><ClipboardList size={20}/> Siparişler</button>
-          <button onClick={() => setView('menu')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'menu' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><Package size={20}/> Menü Yönetimi</button>
-          <button onClick={() => setView('rooms')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'rooms' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><QrCode size={20}/> Odalar & QR</button>
-          <button onClick={() => setView('settings')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'settings' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><Settings size={20}/> Tesis Ayarları</button>
+          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-xs transition-all uppercase tracking-widest ${view === 'orders' ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30' : 'text-slate-400 hover:bg-slate-50'}`}><ClipboardList size={18}/> Orders</button>
+          <button onClick={() => setView('menu')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-xs transition-all uppercase tracking-widest ${view === 'menu' ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30' : 'text-slate-400 hover:bg-slate-50'}`}><Package size={18}/> Inventory</button>
+          <button onClick={() => setView('rooms')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-xs transition-all uppercase tracking-widest ${view === 'rooms' ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30' : 'text-slate-400 hover:bg-slate-50'}`}><QrCode size={18}/> Terminal QR</button>
+          <button onClick={() => setView('settings')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-black text-xs transition-all uppercase tracking-widest ${view === 'settings' ? 'bg-slate-900 text-white shadow-2xl shadow-slate-900/30' : 'text-slate-400 hover:bg-slate-50'}`}><Settings size={18}/> Configuration</button>
         </nav>
-        <div className="pt-6 border-t border-slate-100">
-          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-6 py-3 rounded-2xl text-slate-500 font-bold hover:bg-slate-50 transition-all text-xs"><Home size={18}/> Ana Sayfaya Dön</button>
-        </div>
+        
+        <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-black text-[10px] text-slate-400 border border-slate-100 hover:bg-slate-50 transition-all uppercase tracking-widest"><Home size={16}/> Go Public</button>
       </aside>
 
-      {/* Content */}
-      <main className="flex-1 p-12 overflow-y-auto no-scrollbar">
+      <main className="flex-1 p-16 overflow-y-auto no-scrollbar">
         {view === 'orders' && (
-          <div className="space-y-8 animate-fade-in">
-            <h2 className="text-4xl font-black text-slate-900">Canlı Siparişler</h2>
-            <div className="grid gap-4">
+          <div className="space-y-12 animate-fade-in">
+            <h2 className="text-6xl font-black tracking-tighter">Current Orders.</h2>
+            <div className="grid gap-4 max-w-5xl">
               {combinedOrders.length === 0 ? (
-                <div className="bg-white rounded-[3rem] p-20 text-center border-2 border-dashed border-slate-200">
-                  <Info className="mx-auto text-slate-300 mb-4" size={48}/>
-                  <p className="text-slate-400 font-bold">Henüz sipariş veya talep yok.</p>
+                <div className="bg-white rounded-[3rem] p-32 text-center border-2 border-dashed border-slate-200">
+                  <p className="text-slate-400 font-black uppercase tracking-widest text-xs">No active transactions found.</p>
                 </div>
               ) : combinedOrders.map((o: any) => (
-                <div key={o.id} className={`bg-white p-8 rounded-[2.5rem] border-2 flex items-center justify-between shadow-sm transition-all ${o.status === 'pending' ? 'border-orange-500 bg-orange-50/10' : 'border-slate-100'}`}>
-                  <div className="flex items-center gap-8">
-                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex flex-col items-center justify-center">
-                      <span className="text-[10px] font-black text-slate-400">ODA</span>
+                <div key={o.id} className={`bg-white p-10 rounded-[3rem] border flex items-center justify-between shadow-sm group hover:shadow-xl transition-all ${o.status === 'pending' ? 'border-orange-500' : 'border-slate-100'}`}>
+                  <div className="flex items-center gap-10">
+                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex flex-col items-center justify-center border border-slate-100">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unit</span>
                       <span className="text-2xl font-black">{o.room_number}</span>
                     </div>
                     <div>
-                      <span className={`text-[10px] font-black px-2 py-1 rounded-md uppercase tracking-widest ${o.entryType === 'order' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>{o.entryType === 'order' ? 'SİPARİŞ' : 'HİZMET'}</span>
-                      <h4 className="text-lg font-black mt-1">{o.entryType === 'order' ? o.items.map((i:any)=>`${i.name} x${i.quantity}`).join(', ') : o.service_type}</h4>
-                      <p className="text-xs text-slate-400 font-bold uppercase mt-1 tracking-widest">{new Date(o.created_at).toLocaleTimeString()}</p>
+                      <span className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-widest mb-2 inline-block ${o.entryType === 'order' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>{o.entryType === 'order' ? 'Gastronomy' : 'Concierge'}</span>
+                      <h4 className="text-2xl font-black tracking-tight">{o.entryType === 'order' ? o.items.map((i:any)=>`${i.name} x${i.quantity}`).join(', ') : o.service_type}</h4>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    {o.entryType === 'order' && <span className="text-2xl font-black text-slate-900">₺{o.total_amount}</span>}
+                  <div className="flex items-center gap-10">
+                    <div className="flex flex-col items-end">
+                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{new Date(o.created_at).toLocaleTimeString()}</p>
+                       {o.entryType === 'order' && <span className="text-3xl font-black">₺{o.total_amount}</span>}
+                    </div>
                     <div className="flex gap-2">
                        {o.status === 'pending' ? (
-                        <button onClick={() => updateStatus(o.id, o.entryType === 'order' ? 'orders' : 'service_requests', 'preparing')} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-black text-xs hover:bg-orange-600 transition-all shadow-lg active:scale-95">İŞLEME AL</button>
+                        <button onClick={() => updateStatus(o.id, o.entryType === 'order' ? 'orders' : 'service_requests', 'preparing')} className="bg-slate-900 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-orange-600 shadow-xl transition-all">Process</button>
                       ) : o.status === 'preparing' ? (
-                        <button onClick={() => updateStatus(o.id, o.entryType === 'order' ? 'orders' : 'service_requests', 'delivered')} className="bg-emerald-600 text-white px-8 py-3 rounded-xl font-black text-xs shadow-lg active:scale-95">TAMAMLA</button>
+                        <button onClick={() => updateStatus(o.id, o.entryType === 'order' ? 'orders' : 'service_requests', 'delivered')} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all">Complete</button>
                       ) : <CheckCircle className="text-emerald-500" size={32}/>}
                     </div>
                   </div>
@@ -235,136 +322,125 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
         )}
 
         {view === 'menu' && (
-          <div className="space-y-8 animate-fade-in">
-            <div className="flex justify-between items-center">
-               <h2 className="text-4xl font-black text-slate-900">Menü Yönetimi</h2>
-               <button onClick={() => setIsEditingMenu(true)} className="bg-orange-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2 shadow-xl hover:scale-105 transition-all"><Plus size={20}/> Ürün Ekle</button>
+          <div className="space-y-12 animate-fade-in">
+            <div className="flex justify-between items-end">
+               <h2 className="text-6xl font-black tracking-tighter">Inventory.</h2>
+               <button onClick={() => { setNewItem({ name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains' }); setIsEditingMenu(true); }} className="bg-slate-900 text-white px-10 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-2xl hover:bg-orange-600 transition-all text-xs uppercase tracking-widest"><Plus size={20}/> New Product</button>
             </div>
-            {menuItems.length === 0 ? (
-               <div className="bg-white rounded-[3rem] p-32 text-center border-2 border-dashed border-slate-200">
-                  <Package className="mx-auto text-slate-200 mb-6" size={64}/>
-                  <h3 className="text-2xl font-black text-slate-400 mb-8">Henüz ürün eklenmemiş</h3>
-                  <button onClick={() => setIsEditingMenu(true)} className="bg-slate-900 text-white px-10 py-5 rounded-2xl font-black">İlk Ürünü Ekle</button>
-               </div>
-            ) : (
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 {menuItems.map(item => (
-                   <div key={item.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col group hover:shadow-xl transition-all">
-                     <div className="relative aspect-video rounded-3xl overflow-hidden mb-6 bg-slate-100">
-                        <img src={item.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                     </div>
-                     <h4 className="text-xl font-black mb-2">{item.name}</h4>
-                     <p className="text-slate-500 text-sm mb-6 line-clamp-2 flex-1">{item.description}</p>
-                     <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                        <span className="text-2xl font-black text-orange-600">₺{item.price}</span>
-                        <div className="flex gap-2">
-                           <button onClick={async () => { if(confirm('Bu ürün menüden silinsin mi?')) { await supabase.from('menu_items').delete().eq('id', item.id); fetchMenu(hotelIdProp); } }} className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"><Trash2 size={20}/></button>
-                        </div>
-                     </div>
-                   </div>
-                 ))}
-               </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+               {menuItems.map(item => (
+                 <div key={item.id} className="bg-white rounded-[3rem] border border-slate-100 overflow-hidden shadow-sm group hover:shadow-2xl transition-all flex flex-col">
+                    <div className="relative aspect-video bg-slate-50 overflow-hidden">
+                       <img src={item.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt={item.name} />
+                       <div className="absolute top-4 right-4 flex gap-2">
+                          <button onClick={() => { setNewItem(item); setIsEditingMenu(true); }} className="w-10 h-10 bg-white/90 backdrop-blur-md rounded-xl flex items-center justify-center text-slate-600 hover:text-orange-600 shadow-sm transition-all"><Edit3 size={18}/></button>
+                          <button onClick={async () => { if(confirm('Ürünü silmek istediğinize emin misiniz?')) { await supabase.from('menu_items').delete().eq('id', item.id); fetchMenu(hotelIdProp); } }} className="w-10 h-10 bg-white/90 backdrop-blur-md rounded-xl flex items-center justify-center text-slate-600 hover:text-rose-600 shadow-sm transition-all"><Trash2 size={18}/></button>
+                       </div>
+                       {item.popular && <span className="absolute top-4 left-4 bg-orange-600 text-white text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest">Popüler</span>}
+                    </div>
+                    <div className="p-8 flex-1 flex flex-col">
+                       <div className="flex justify-between items-start mb-4">
+                          <h4 className="text-xl font-black tracking-tight">{item.name}</h4>
+                          <span className="text-2xl font-black text-orange-600">₺{item.price}</span>
+                       </div>
+                       <p className="text-slate-400 text-xs font-medium leading-relaxed mb-6 flex-1 line-clamp-2">{item.description}</p>
+                       <div className="flex items-center justify-between pt-6 border-t border-slate-50">
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-md ${item.type === 'food' ? 'bg-orange-50 text-orange-600' : 'bg-emerald-50 text-emerald-600'}`}>{item.type}</span>
+                          <div className="flex items-center gap-2">
+                             <div className={`w-2 h-2 rounded-full ${item.is_available ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.is_available ? 'Mevcut' : 'Tükendi'}</span>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+               ))}
+            </div>
+            {menuItems.length === 0 && (
+              <div className="py-40 bg-white rounded-[4rem] border-2 border-dashed border-slate-200 text-center">
+                 <Package size={48} className="text-slate-200 mx-auto mb-6" />
+                 <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Menü henüz boş. İlk ürününüzü ekleyin.</p>
+              </div>
             )}
           </div>
         )}
 
         {view === 'rooms' && (
-          <div className="space-y-8 animate-fade-in">
-             <div className="flex justify-between items-center">
-               <h2 className="text-4xl font-black text-slate-900">Odalar & QR Kodlar</h2>
-               <button onClick={() => setIsAddingRoom(true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2 shadow-xl hover:scale-105 transition-all"><Plus size={20}/> Oda Tanımla</button>
+          <div className="space-y-12 animate-fade-in">
+            <div className="flex justify-between items-end">
+               <h2 className="text-6xl font-black tracking-tighter">Terminal QR.</h2>
+               <div className="flex gap-4">
+                  <button onClick={() => setIsBulkAdding(true)} className="bg-white border border-slate-200 text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center gap-3 hover:bg-slate-50 transition-all text-xs uppercase tracking-widest"><Layers size={20}/> Bulk Generate</button>
+                  <button onClick={() => setIsAddingRoom(true)} className="bg-orange-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-2xl hover:bg-slate-900 transition-all text-xs uppercase tracking-widest"><Plus size={20}/> New Unit</button>
+               </div>
             </div>
-            {rooms.length === 0 ? (
-               <div className="bg-white rounded-[3rem] p-32 text-center border-2 border-dashed border-slate-200">
-                  <QrCode className="mx-auto text-slate-200 mb-6" size={64}/>
-                  <h3 className="text-2xl font-black text-slate-400 mb-8">Oda tanımlaması yapılmamış</h3>
-                  <button onClick={() => setIsAddingRoom(true)} className="bg-orange-600 text-white px-10 py-5 rounded-2xl font-black">QR Kod Oluştur</button>
-               </div>
-            ) : (
-               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-                  {rooms.map(room => (
-                    <div key={room.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 text-center space-y-4 hover:shadow-xl transition-all group">
-                       <div className="text-3xl font-black text-slate-900 group-hover:text-orange-600 transition-colors">{room.room_number}</div>
-                       <div className="aspect-square bg-slate-50 rounded-2xl p-4 flex items-center justify-center border border-slate-100">
-                          <img src={room.qr_url} className="w-full h-full object-contain" />
-                       </div>
-                       <div className="flex flex-col gap-2">
-                          <button onClick={() => window.open(room.qr_url, '_blank')} className="text-[10px] font-black text-slate-400 hover:text-orange-600 uppercase tracking-widest flex items-center justify-center gap-1 mx-auto transition-colors"><ExternalLink size={12}/> İNDİR</button>
-                          <button onClick={async () => { if(confirm('Oda kaydı silinsin mi?')) { await supabase.from('rooms').delete().eq('id', room.id); fetchRooms(hotelIdProp); } }} className="text-[10px] font-black text-slate-300 hover:text-rose-500 uppercase tracking-widest transition-colors">SİL</button>
-                       </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+               {rooms.map(room => (
+                 <div key={room.id} className="bg-white p-8 rounded-[3rem] border border-slate-100 text-center space-y-6 hover:shadow-2xl transition-all group relative overflow-hidden">
+                    <div className="text-4xl font-black group-hover:text-orange-600 transition-colors">{room.room_number}</div>
+                    <div className="aspect-square bg-slate-50 rounded-3xl p-4 border border-slate-50 group-hover:scale-105 transition-transform duration-500">
+                       <img src={room.qr_url} className="w-full h-full object-contain" />
                     </div>
-                  ))}
-               </div>
-            )}
+                    <div className="flex flex-col gap-2 pt-2">
+                       <button onClick={() => handleDownloadQR(room)} className="flex items-center justify-center gap-2 text-[10px] font-black text-slate-400 hover:text-orange-600 uppercase tracking-widest transition-colors"><Download size={12}/> Download</button>
+                       <button onClick={async () => { if(confirm('Delete room record?')) { await supabase.from('rooms').delete().eq('id', room.id); fetchRooms(hotelIdProp); } }} className="text-[10px] font-black text-slate-200 hover:text-rose-500 uppercase tracking-widest transition-colors">Terminate</button>
+                    </div>
+                 </div>
+               ))}
+            </div>
           </div>
         )}
 
         {view === 'settings' && hotel && (
-          <div className="space-y-12 animate-fade-in max-w-4xl">
+          <div className="space-y-16 animate-fade-in max-w-5xl">
              <div className="flex justify-between items-end">
-                <div>
-                  <h2 className="text-4xl font-black text-slate-900">Tesis Ayarları</h2>
-                  <p className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Marka Kimliği & Bilgiler</p>
-                </div>
-                <button onClick={saveHotelSettings} disabled={isUploading} className="bg-orange-600 text-white px-10 py-4 rounded-2xl font-black flex items-center gap-2 shadow-xl hover:bg-orange-500 transition-all active:scale-95">
-                   {isUploading ? <Loader2 className="animate-spin"/> : <Save size={20}/>} Ayarları Kaydet
+                <h2 className="text-6xl font-black tracking-tighter">Configuration.</h2>
+                <button onClick={saveHotelSettings} disabled={isUploading} className="bg-orange-600 text-white px-14 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-2xl hover:bg-slate-900 transition-all uppercase tracking-widest text-xs">
+                   {isUploading ? <Loader2 className="animate-spin"/> : <Save size={20}/>} Apply Changes
                 </button>
              </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
                 <div className="space-y-6">
-                   <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
+                   <div className="bg-white p-10 rounded-[3.5rem] border border-slate-200 shadow-sm space-y-10">
                       <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 text-center">Kurumsal Logo</p>
-                        <div onClick={() => !uploadingLogo && hotelLogoRef.current?.click()} className="relative aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
-                          {uploadingLogo ? (
-                             <div className="absolute inset-0 bg-white/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
-                               <Loader2 className="animate-spin text-orange-600 mb-2" />
-                               <span className="text-[10px] font-black text-orange-600">YÜKLENİYOR...</span>
-                             </div>
-                          ) : null}
-                          {hotel.logo_url ? <img src={hotel.logo_url} className="w-full h-full object-contain" /> : <><Upload className="text-slate-300 mb-2"/><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">YÜKLE</span></>}
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 text-center">Brand Identity (Logo)</p>
+                        <div onClick={() => !uploadingLogo && hotelLogoRef.current?.click()} className="relative aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[3rem] flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all p-10">
+                          {uploadingLogo && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center"><Loader2 className="animate-spin text-orange-600 mb-2"/><span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">Uploading</span></div>}
+                          {hotel.logo_url ? <img src={hotel.logo_url} className="w-full h-full object-contain group-hover:scale-105 transition-transform" /> : <Upload className="text-slate-300"/>}
                         </div>
                         <input type="file" ref={hotelLogoRef} className="hidden" onChange={e => handleImageUpload(e, 'logo')} />
                       </div>
-                      
                       <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 text-center">Banner Görseli</p>
-                        <div onClick={() => !uploadingBanner && hotelBannerRef.current?.click()} className="relative aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
-                          {uploadingBanner ? (
-                             <div className="absolute inset-0 bg-white/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
-                               <Loader2 className="animate-spin text-orange-600 mb-2" />
-                               <span className="text-[10px] font-black text-orange-600">YÜKLENİYOR...</span>
-                             </div>
-                          ) : null}
-                          {hotel.banner_url ? <img src={hotel.banner_url} className="w-full h-full object-cover rounded-2xl" /> : <><Upload className="text-slate-300 mb-2"/><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">YÜKLE</span></>}
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 text-center">Hero Assets (Banner)</p>
+                        <div onClick={() => !uploadingBanner && hotelBannerRef.current?.click()} className="relative aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-[3rem] flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all">
+                          {uploadingBanner && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center"><Loader2 className="animate-spin text-orange-600 mb-2"/><span className="text-[9px] font-black text-orange-600 uppercase tracking-widest">Uploading</span></div>}
+                          {hotel.banner_url ? <img src={hotel.banner_url} className="w-full h-full object-cover group-hover:scale-105 transition-transform" /> : <Upload className="text-slate-300"/>}
                         </div>
                         <input type="file" ref={hotelBannerRef} className="hidden" onChange={e => handleImageUpload(e, 'banner')} />
                       </div>
                    </div>
                 </div>
-
-                <div className="md:col-span-2 bg-white p-10 rounded-[3rem] border border-slate-200 space-y-10 shadow-sm">
-                   <div className="grid grid-cols-2 gap-8">
-                      <div className="col-span-2">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 block mb-2">Tesis Resmi Adı</label>
-                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none focus:border-orange-500 transition-all" value={hotel.name} onChange={e => setHotel({...hotel, name: e.target.value})} />
+                <div className="lg:col-span-2 bg-white p-16 rounded-[4rem] border border-slate-200 space-y-12">
+                   <div className="grid grid-cols-2 gap-10">
+                      <div className="col-span-2 space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6">Corporate Name</label>
+                         <input type="text" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] font-black text-xl focus:outline-none focus:border-orange-500 transition-all" value={hotel.name} onChange={e => setHotel({...hotel, name: e.target.value})} />
                       </div>
-                      <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 block mb-2">WhatsApp Destek</label>
-                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none focus:border-orange-500 transition-all" value={hotel.whatsapp_number} onChange={e => setHotel({...hotel, whatsapp_number: e.target.value})} />
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6">Support Hotline</label>
+                         <input type="text" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] font-black text-xl focus:outline-none focus:border-orange-500 transition-all" value={hotel.whatsapp_number} onChange={e => setHotel({...hotel, whatsapp_number: e.target.value})} />
                       </div>
-                      <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 block mb-2">Checkout Saati</label>
-                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none focus:border-orange-500 transition-all" value={hotel.checkout_time} onChange={e => setHotel({...hotel, checkout_time: e.target.value})} />
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6">Departure Limit</label>
+                         <input type="text" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] font-black text-xl focus:outline-none focus:border-orange-500 transition-all" value={hotel.checkout_time} onChange={e => setHotel({...hotel, checkout_time: e.target.value})} />
                       </div>
-                      <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 block mb-2">WiFi Ağı Adı</label>
-                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none focus:border-orange-500 transition-all" value={hotel.wifi_name} onChange={e => setHotel({...hotel, wifi_name: e.target.value})} />
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6">WiFi Identifier</label>
+                         <input type="text" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] font-black text-xl focus:outline-none focus:border-orange-500 transition-all" value={hotel.wifi_name} onChange={e => setHotel({...hotel, wifi_name: e.target.value})} />
                       </div>
-                      <div>
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 block mb-2">WiFi Şifresi</label>
-                         <input type="text" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold focus:outline-none focus:border-orange-500 transition-all" value={hotel.wifi_pass} onChange={e => setHotel({...hotel, wifi_pass: e.target.value})} />
+                      <div className="space-y-2">
+                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-6">Network Key</label>
+                         <input type="text" className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] font-black text-xl focus:outline-none focus:border-orange-500 transition-all" value={hotel.wifi_pass} onChange={e => setHotel({...hotel, wifi_pass: e.target.value})} />
                       </div>
                    </div>
                 </div>
@@ -373,49 +449,107 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
         )}
       </main>
 
-      {/* Modals */}
-      {isEditingMenu && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6">
-          <div className="bg-white p-12 rounded-[4rem] w-full max-w-xl shadow-2xl animate-fade-in">
-            <div className="flex justify-between mb-8 items-center">
-               <h3 className="text-3xl font-black">Yeni Ürün Ekle</h3>
-               <button onClick={() => setIsEditingMenu(false)} className="p-3 bg-slate-100 rounded-full hover:bg-slate-200 transition-all"><X size={24}/></button>
-            </div>
-            <div className="space-y-6">
-               <div onClick={() => menuImgRef.current?.click()} className="w-full h-56 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center cursor-pointer overflow-hidden p-2 group hover:border-orange-500 transition-all">
-                  {newItem.image ? <img src={newItem.image} className="w-full h-full object-cover rounded-2xl" /> : <><Upload className="text-slate-300 mb-2"/><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">RESİM YÜKLE</span></>}
+      {/* Toplu QR Sihirbazı */}
+      {isBulkAdding && (
+         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-3xl flex items-center justify-center p-6">
+            <div className="bg-white p-16 rounded-[4rem] w-full max-w-lg text-center shadow-3xl animate-fade-in">
+               <div className="w-24 h-24 bg-orange-600 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-10 shadow-2xl shadow-orange-900/20"><Layers size={48}/></div>
+               <h3 className="text-4xl font-black tracking-tighter mb-4 uppercase">Batch Generator.</h3>
+               <p className="text-slate-400 font-bold mb-10 text-xs uppercase tracking-widest">Oluşturulacak oda aralığını belirleyin.</p>
+               <div className="grid grid-cols-2 gap-6 mb-12">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Start Unit</label>
+                    <input type="number" className="w-full p-8 bg-slate-50 border border-slate-200 rounded-[2rem] font-black text-4xl text-center focus:border-orange-500 outline-none transition-all" value={bulkRange.start} onChange={e => setBulkRange({...bulkRange, start: parseInt(e.target.value) || 1})} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">End Unit</label>
+                    <input type="number" className="w-full p-8 bg-slate-50 border border-slate-200 rounded-[2rem] font-black text-4xl text-center focus:border-orange-500 outline-none transition-all" value={bulkRange.end} onChange={e => setBulkRange({...bulkRange, end: parseInt(e.target.value) || 10})} />
+                  </div>
                </div>
-               <input type="file" ref={menuImgRef} className="hidden" onChange={e => handleImageUpload(e, 'menu')} />
-               <input type="text" placeholder="Ürün Adı" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none focus:border-orange-500 transition-all" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} />
-               <textarea placeholder="Ürün Açıklaması (Misafire görünecek detaylar)" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl font-bold h-32 outline-none focus:border-orange-500 transition-all" value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} />
-               <div className="grid grid-cols-2 gap-4">
-                  <input type="number" placeholder="Fiyat (₺)" className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl font-black outline-none focus:border-orange-500 transition-all" value={newItem.price || ''} onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} />
-                  <select className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl font-black outline-none focus:border-orange-500 transition-all" value={newItem.type} onChange={e => setNewItem({...newItem, type: e.target.value as any})}>
-                     <option value="food">Yemek & Mutfak</option>
-                     <option value="market">Mini Market</option>
-                  </select>
-               </div>
-               <button onClick={saveMenuItem} disabled={isUploading} className="w-full bg-orange-600 text-white py-6 rounded-2xl font-black text-xl shadow-xl hover:bg-orange-500 transition-all active:scale-95 flex items-center justify-center gap-3">
-                 {isUploading ? <Loader2 className="animate-spin"/> : <Save size={24}/>} Ürünü Kaydet
+               <button onClick={handleBulkAdd} disabled={isUploading} className="w-full bg-slate-900 text-white py-8 rounded-[2rem] font-black text-2xl shadow-2xl hover:bg-orange-600 transition-all flex items-center justify-center gap-4">
+                 {isUploading ? <Loader2 className="animate-spin"/> : 'Generate Batch'}
                </button>
+               <button onClick={() => setIsBulkAdding(false)} className="mt-8 text-slate-400 font-black uppercase tracking-widest text-[10px] hover:text-slate-900 transition-colors">Discard Plan</button>
             </div>
-          </div>
+         </div>
+      )}
+
+      {/* Ürün Ekle/Düzenle Modalı */}
+      {isEditingMenu && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-3xl flex items-center justify-center p-6">
+           <div className="bg-white p-12 rounded-[4rem] w-full max-w-2xl shadow-3xl animate-fade-in overflow-y-auto max-h-[90vh] no-scrollbar">
+              <div className="flex justify-between items-center mb-10">
+                 <h3 className="text-3xl font-black tracking-tighter uppercase">{newItem.id ? 'Edit Product' : 'New Product'}</h3>
+                 <button onClick={() => setIsEditingMenu(false)} className="p-4 bg-slate-50 rounded-full hover:bg-slate-100 transition-all"><X size={24}/></button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 <div className="space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Product Identity</label>
+                       <input type="text" placeholder="Product Name" className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:border-orange-500 font-bold" value={newItem.name || ''} onChange={e => setNewItem({...newItem, name: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Valuation (₺)</label>
+                       <input type="number" placeholder="Price" className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:border-orange-500 font-black text-2xl" value={newItem.price || 0} onChange={e => setNewItem({...newItem, price: parseFloat(e.target.value) || 0})} />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Catalog Section</label>
+                       <select className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:border-orange-500 font-bold appearance-none" value={newItem.category || 'mains'} onChange={e => setNewItem({...newItem, category: e.target.value})}>
+                          <option value="starters">Starters</option>
+                          <option value="mains">Main Courses</option>
+                          <option value="desserts">Desserts</option>
+                          <option value="snacks">Snacks</option>
+                          <option value="drinks">Drinks</option>
+                          <option value="personal">Personal Care</option>
+                       </select>
+                    </div>
+                    <div className="flex gap-4">
+                       <button onClick={() => setNewItem({...newItem, type: 'food'})} className={`flex-1 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${newItem.type === 'food' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>Food</button>
+                       <button onClick={() => setNewItem({...newItem, type: 'market'})} className={`flex-1 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${newItem.type === 'market' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>Market</button>
+                    </div>
+                 </div>
+                 
+                 <div className="space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Visual Asset</label>
+                       <div onClick={() => !isUploading && menuImgRef.current?.click()} className="relative aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex items-center justify-center cursor-pointer overflow-hidden group hover:border-orange-500 transition-all">
+                          {isUploading && <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-20 flex items-center justify-center"><Loader2 className="animate-spin text-orange-600"/></div>}
+                          {newItem.image ? <img src={newItem.image} className="w-full h-full object-cover group-hover:scale-105 transition-transform" /> : <ImageIcon className="text-slate-300" size={32}/>}
+                       </div>
+                       <input type="file" ref={menuImgRef} className="hidden" onChange={e => handleImageUpload(e, 'menu')} />
+                    </div>
+                    <div className="flex gap-4 pt-4">
+                       <button onClick={() => setNewItem({...newItem, popular: !newItem.popular})} className={`flex-1 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${newItem.popular ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-slate-400 border-slate-100'}`}>Popular</button>
+                       <button onClick={() => setNewItem({...newItem, is_available: !newItem.is_available})} className={`flex-1 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest border transition-all ${newItem.is_available ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-rose-100 text-rose-600 border-rose-100'}`}>{newItem.is_available ? 'In Stock' : 'Out of Stock'}</button>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="mt-8 space-y-2">
+                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Product Narration</label>
+                 <textarea placeholder="Description" className="w-full p-6 bg-slate-50 border border-slate-200 rounded-[1.5rem] outline-none focus:border-orange-500 font-medium h-32 no-scrollbar" value={newItem.description || ''} onChange={e => setNewItem({...newItem, description: e.target.value})} />
+              </div>
+
+              <button onClick={saveMenuItem} disabled={isUploading} className="w-full bg-slate-900 text-white py-8 rounded-[2rem] font-black text-2xl shadow-2xl hover:bg-orange-600 transition-all mt-10 active:scale-95 flex items-center justify-center gap-4">
+                 {isUploading ? <Loader2 className="animate-spin"/> : <Save size={24}/>} Confirm Changes
+              </button>
+           </div>
         </div>
       )}
 
+      {/* Tekli Oda Ekleme Modalı */}
       {isAddingRoom && (
-         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6">
-            <div className="bg-white p-12 rounded-[4rem] w-full max-w-sm text-center shadow-2xl animate-fade-in">
-               <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                  <QrCode size={40}/>
-               </div>
-               <h3 className="text-3xl font-black mb-2">Oda Tanımla</h3>
-               <p className="text-slate-400 font-bold mb-8 uppercase tracking-widest text-[10px]">Her oda için eşsiz QR kod üretilir.</p>
-               <input type="text" placeholder="ODA NO" className="w-full p-6 bg-slate-50 border border-slate-200 rounded-2xl font-black text-center text-4xl mb-8 outline-none focus:border-orange-500 transition-all" value={newRoomNumber} onChange={e => setNewRoomNumber(e.target.value)} />
-               <button onClick={handleAddRoom} disabled={isUploading} className="w-full bg-slate-900 text-white py-6 rounded-2xl font-black text-xl shadow-xl hover:bg-orange-600 transition-all active:scale-95 flex items-center justify-center gap-3">
-                 {isUploading ? <Loader2 className="animate-spin"/> : 'QR Kodu Üret'}
+         <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-3xl flex items-center justify-center p-6">
+            <div className="bg-white p-12 rounded-[3.5rem] w-full max-w-sm text-center shadow-3xl animate-fade-in">
+               <div className="w-20 h-20 bg-orange-100 text-orange-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-orange-200"><QrCode size={40}/></div>
+               <h3 className="text-3xl font-black tracking-tighter mb-2">New Unit.</h3>
+               <p className="text-slate-400 font-bold mb-8 uppercase tracking-widest text-[9px]">Generate a single terminal code.</p>
+               <input type="text" placeholder="ODA NO" className="w-full p-8 bg-slate-50 border border-slate-200 rounded-[2rem] font-black text-center text-4xl mb-8 outline-none focus:border-orange-500 transition-all" value={newRoomNumber} onChange={e => setNewRoomNumber(e.target.value)} />
+               <button onClick={handleAddSingleRoom} disabled={isUploading} className="w-full bg-slate-900 text-white py-6 rounded-[2rem] font-black text-xl shadow-2xl hover:bg-orange-600 transition-all active:scale-95 flex items-center justify-center gap-3">
+                 {isUploading ? <Loader2 className="animate-spin"/> : 'Confirm Unit'}
                </button>
-               <button onClick={() => setIsAddingRoom(false)} className="mt-6 text-slate-400 font-black uppercase tracking-widest text-[10px] hover:text-slate-600 transition-colors">Vazgeç</button>
+               <button onClick={() => setIsAddingRoom(false)} className="mt-6 text-slate-400 font-black uppercase tracking-widest text-[10px] hover:text-slate-900 transition-colors">Cancel</button>
             </div>
          </div>
       )}
