@@ -7,12 +7,14 @@ export interface Hotel {
   id: string;
   name: string;
   logo_url: string;
-  banner_url?: string; // Yeni alan
+  banner_url?: string;
   wifi_name: string;
   wifi_pass: string;
   checkout_time: string;
   reception_phone: string;
   whatsapp_number: string;
+  username?: string; // Yeni
+  password?: string; // Yeni
   created_at?: string;
 }
 
@@ -51,7 +53,7 @@ export interface Order {
   status: 'pending' | 'preparing' | 'delivered' | 'cancelled';
   items: any[];
   created_at: string;
-  hotels?: { name: string }; // Join için eklendi
+  hotels?: { name: string };
 }
 
 export interface ServiceRequest {
@@ -61,7 +63,7 @@ export interface ServiceRequest {
   service_type: string;
   status: 'pending' | 'completed' | 'cancelled';
   created_at: string;
-  hotels?: { name: string }; // Join için eklendi
+  hotels?: { name: string };
 }
 
 export interface CartItem extends MenuItem {
@@ -69,7 +71,7 @@ export interface CartItem extends MenuItem {
 }
 
 export type ViewState = 'home' | 'dining' | 'amenities' | 'chat' | 'cart' | 'info';
-export type PanelState = 'guest' | 'hotel_dashboard' | 'admin_dashboard';
+export type PanelState = 'guest' | 'hotel_dashboard' | 'admin_dashboard' | 'landing' | 'super_login' | 'hotel_login';
 export type Language = 'tr' | 'en' | 'ar';
 
 export interface ChatMessage {
