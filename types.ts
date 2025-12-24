@@ -13,9 +13,19 @@ export interface Hotel {
   checkout_time: string;
   reception_phone: string;
   whatsapp_number: string;
-  username?: string; // Yeni
-  password?: string; // Yeni
+  username?: string;
+  password?: string;
   created_at?: string;
+}
+
+export interface HotelApplication {
+  id: string;
+  hotel_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  status: 'pending' | 'reviewed' | 'approved' | 'rejected';
+  created_at: string;
 }
 
 export interface Room {
