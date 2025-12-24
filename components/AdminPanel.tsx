@@ -2,13 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Hotel, Plus, Trash2, ExternalLink, Settings, X, 
-  Loader2, ShieldCheck, Home, Activity, CheckCircle, Clock, ShoppingBag, Bell
+  Loader2, ShieldCheck, Home, Activity, CheckCircle, Clock, ShoppingBag, Bell, User
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Hotel as HotelType, PanelState } from '../types';
 
 interface AdminPanelProps {
-  onNavigate: (mode: PanelState, path: string) => void;
+  onNavigate: (mode: PanelState, path: string, hId?: string) => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
@@ -218,9 +218,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
                        </div>
                     </div>
                     <div className="flex gap-4">
-                       <button onClick={() => window.open(`/otel-admin/${h.id}`, '_blank')} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-white hover:bg-white/10 transition-all shadow-xl" title="Admin Paneline Git"><ExternalLink size={24}/></button>
-                       <button onClick={() => setEditingHotel(h)} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-orange-500 hover:bg-white/10 transition-all shadow-xl" title="Ayarlar"><Settings size={24}/></button>
-                       <button onClick={async () => { if(confirm(`${h.name} tesisini ve tüm verilerini (siparişler, menü, odalar) kalıcı olarak silmek istediğinize emin misiniz?`)) { await supabase.from('hotels').delete().eq('id', h.id); fetchHotels(); } }} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all shadow-xl" title="Sil"><Trash2 size={24}/></button>
+                       <button onClick={() => onNavigate('hotel_dashboard', `/otel-admin/${h.id}`, h.id)} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-white hover:bg-white/10 transition-all shadow-xl" title="Admin Olarak Giriş Yap"><User size={24}/></button>
+                       <button onClick={() => setEditingHotel(h)} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-orange-500 hover:bg-white/10 transition-all shadow-xl" title="Düzenle"><Settings size={24}/></button>
+                       <button onClick={async () => { if(confirm(`${h.name} tesisini ve tüm verilerini kalıcı olarak silmek istediğinize emin misiniz?`)) { await supabase.from('hotels').delete().eq('id', h.id); fetchHotels(); } }} className="p-5 bg-white/5 rounded-3xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all shadow-xl" title="Sil"><Trash2 size={24}/></button>
                     </div>
                  </div>
                ))}
@@ -256,7 +256,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
                  
                  <div className="bg-orange-600/10 p-6 rounded-3xl border border-orange-500/20 space-y-2">
                     <p className="text-[9px] font-black text-orange-500 uppercase tracking-widest">GÜVENLİK NOTU</p>
-                    <p className="text-xs text-slate-400 leading-relaxed">Bu bilgiler otel yönetiminin platforma erişimi için kullanılır. Logo ve diğer marka ayarları otel admini tarafından giriş yaptıktan sonra "Tesis Ayarları" kısmından güncellenebilir.</p>
+                    <p className="text-xs text-slate-400 leading-relaxed">Bu bilgiler otel yönetiminin platforma erişimi için kullanılır.</p>
                  </div>
 
                  <button 

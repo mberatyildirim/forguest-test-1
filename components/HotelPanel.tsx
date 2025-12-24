@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ClipboardList, ChefHat, QrCode, Settings, CheckCircle, Package, Save, Plus, Trash2, 
-  LogOut, X, Loader2, Upload, Home, Info, ShoppingBasket, ExternalLink
+  X, Loader2, Upload, Home, Info, ExternalLink
 } from 'lucide-react';
 import { supabase, uploadFile, uploadBlob } from '../lib/supabase';
 import { MenuItem, Order, Room, Hotel, ServiceRequest, PanelState } from '../types';
@@ -24,6 +24,10 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   const [isAddingRoom, setIsAddingRoom] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
+
+  // Görsel bazlı loading durumları
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   
   const [newRoomNumber, setNewRoomNumber] = useState('');
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({ 
@@ -84,14 +88,22 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     const file = e.target.files?.[0];
     if (!file || !hotelIdProp) return;
     try {
-      setIsUploading(true);
+      if (target === 'logo') setUploadingLogo(true);
+      else if (target === 'banner') setUploadingBanner(true);
+      else setIsUploading(true);
+
       const fileName = `${hotelIdProp}/${target}/${Date.now()}-${file.name.replace(/\s/g, '_')}`;
       const url = await uploadFile('resimler', file, fileName);
+      
       if (target === 'menu') setNewItem(prev => ({ ...prev, image: url }));
       else if (target === 'logo') setHotel(prev => prev ? ({ ...prev, logo_url: url }) : null);
       else if (target === 'banner') setHotel(prev => prev ? ({ ...prev, banner_url: url }) : null);
     } catch (err) { alert("Resim yükleme hatası!"); }
-    finally { setIsUploading(false); }
+    finally { 
+      setUploadingLogo(false);
+      setUploadingBanner(false);
+      setIsUploading(false);
+    }
   };
 
   const saveHotelSettings = async () => {
@@ -127,10 +139,15 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     if (!newRoomNumber || !hotelIdProp) return;
     setIsUploading(true);
     try {
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(`${window.location.origin}/${hotelIdProp}/${newRoomNumber}`)}`;
-      const res = await fetch(qrUrl);
+      // Dinamik URL yapısı
+      const appBaseUrl = "https://forguest-test-1.vercel.app";
+      const qrContent = `${appBaseUrl}/${hotelIdProp}/${newRoomNumber}`;
+      
+      const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrContent)}`;
+      const res = await fetch(qrApiUrl);
       const blob = await res.blob();
       const publicUrl = await uploadBlob('qr', blob, `${hotelIdProp}/qr/${newRoomNumber}.png`);
+      
       await supabase.from('rooms').insert({ hotel_id: hotelIdProp, room_number: newRoomNumber, qr_url: publicUrl });
       setIsAddingRoom(false);
       setNewRoomNumber('');
@@ -172,9 +189,8 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
           <button onClick={() => setView('rooms')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'rooms' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><QrCode size={20}/> Odalar & QR</button>
           <button onClick={() => setView('settings')} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl font-bold text-sm transition-all ${view === 'settings' ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/20' : 'text-slate-500 hover:bg-slate-50'}`}><Settings size={20}/> Tesis Ayarları</button>
         </nav>
-        <div className="pt-6 border-t border-slate-100 space-y-2">
-          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-6 py-3 rounded-2xl text-slate-500 font-bold hover:bg-slate-50 transition-all text-xs"><Home size={18}/> Ana Sayfa</button>
-          <button onClick={() => window.location.reload()} className="w-full flex items-center gap-3 px-6 py-3 rounded-2xl text-rose-500 font-bold hover:bg-rose-50 transition-all text-xs"><LogOut size={18}/> Çıkış Yap</button>
+        <div className="pt-6 border-t border-slate-100">
+          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-6 py-3 rounded-2xl text-slate-500 font-bold hover:bg-slate-50 transition-all text-xs"><Home size={18}/> Ana Sayfaya Dön</button>
         </div>
       </aside>
 
@@ -300,7 +316,13 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
                    <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-8">
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 text-center">Kurumsal Logo</p>
-                        <div onClick={() => hotelLogoRef.current?.click()} className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
+                        <div onClick={() => !uploadingLogo && hotelLogoRef.current?.click()} className="relative aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
+                          {uploadingLogo ? (
+                             <div className="absolute inset-0 bg-white/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
+                               <Loader2 className="animate-spin text-orange-600 mb-2" />
+                               <span className="text-[10px] font-black text-orange-600">YÜKLENİYOR...</span>
+                             </div>
+                          ) : null}
                           {hotel.logo_url ? <img src={hotel.logo_url} className="w-full h-full object-contain" /> : <><Upload className="text-slate-300 mb-2"/><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">YÜKLE</span></>}
                         </div>
                         <input type="file" ref={hotelLogoRef} className="hidden" onChange={e => handleImageUpload(e, 'logo')} />
@@ -308,7 +330,13 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
                       
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4 text-center">Banner Görseli</p>
-                        <div onClick={() => hotelBannerRef.current?.click()} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
+                        <div onClick={() => !uploadingBanner && hotelBannerRef.current?.click()} className="relative aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6 hover:border-orange-500 transition-all">
+                          {uploadingBanner ? (
+                             <div className="absolute inset-0 bg-white/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
+                               <Loader2 className="animate-spin text-orange-600 mb-2" />
+                               <span className="text-[10px] font-black text-orange-600">YÜKLENİYOR...</span>
+                             </div>
+                          ) : null}
                           {hotel.banner_url ? <img src={hotel.banner_url} className="w-full h-full object-cover rounded-2xl" /> : <><Upload className="text-slate-300 mb-2"/><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">YÜKLE</span></>}
                         </div>
                         <input type="file" ref={hotelBannerRef} className="hidden" onChange={e => handleImageUpload(e, 'banner')} />
