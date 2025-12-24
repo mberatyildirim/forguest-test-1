@@ -3,8 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, Hotel, Plus, Trash2, Settings, X, 
   Loader2, ShieldCheck, Home, Activity, CheckCircle, Clock, ShoppingBag, Bell, User, FileText, CheckCircle2,
-  // Added Mail and Phone icons to fix 'Cannot find name' errors
-  Mail, Phone
+  Mail, Phone, MoreHorizontal, Globe, ExternalLink, Filter, Search, Wallet, TrendingUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Hotel as HotelType, PanelState, HotelApplication } from '../types';
@@ -23,9 +22,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [view, setView] = useState<'dashboard' | 'hotels' | 'feed' | 'applications'>('dashboard');
 
+  // Filtreleme State'leri
+  const [filterHotel, setFilterHotel] = useState<string>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterDept, setFilterDept] = useState<string>('all');
+
   const handleAdminLogin = () => {
     if (loginForm.user === 'admin' && loginForm.pass === 'admin123') setIsAuthenticated(true);
-    else alert("Super Admin erişim yetkisi doğrulanamadı!");
+    else alert("Erişim yetkisi doğrulanamadı!");
   };
 
   useEffect(() => {
@@ -33,14 +37,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
       fetchHotels();
       fetchGlobalFeed();
       fetchApplications();
-      
-      const ordersSub = supabase.channel('global-admin')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => fetchGlobalFeed())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests' }, () => fetchGlobalFeed())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'hotel_applications' }, () => fetchApplications())
-        .subscribe();
-
-      return () => { supabase.removeChannel(ordersSub); };
     }
   }, [isAuthenticated]);
 
@@ -59,51 +55,60 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
     const { data: services } = await supabase.from('service_requests').select('*, hotels(name)').order('created_at', { ascending: false });
     
     const combined = [
-      ...(orders || []).map(o => ({ ...o, entryType: 'order' })),
-      ...(services || []).map(s => ({ ...s, entryType: 'service' }))
+      ...(orders || []).map(o => ({ 
+        ...o, 
+        feedType: 'Sipariş', 
+        amount: o.total_amount,
+        dept: o.items?.[0]?.type || 'dining'
+      })),
+      ...(services || []).map(s => ({ 
+        ...s, 
+        feedType: 'Hizmet', 
+        amount: 0,
+        dept: 'concierge'
+      }))
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     
     setGlobalFeed(combined);
   };
 
-  const updateAppStatus = async (id: string, status: string) => {
-    await supabase.from('hotel_applications').update({ status }).eq('id', id);
-    fetchApplications();
-  };
-
   const saveHotel = async () => {
-    if (!editingHotel?.name || !editingHotel?.username) return alert("Zorunlu alanlar eksik!");
+    if (!editingHotel?.name || !editingHotel?.username) return alert("Eksik alan!");
     setIsUploading(true);
-    const { error } = await supabase.from('hotels').upsert(editingHotel);
-    if (!error) { 
-      setEditingHotel(null); 
-      fetchHotels(); 
-    } else {
-      alert("Hata oluştu: " + error.message);
-    }
+    await supabase.from('hotels').upsert(editingHotel);
+    setEditingHotel(null);
+    fetchHotels();
     setIsUploading(false);
   };
 
+  // Filtreleme Mantığı
+  const filteredFeed = globalFeed.filter(item => {
+    const hotelMatch = filterHotel === 'all' || item.hotel_id === filterHotel;
+    const typeMatch = filterType === 'all' || item.feedType === filterType;
+    const deptMatch = filterDept === 'all' || item.dept === filterDept;
+    return hotelMatch && typeMatch && deptMatch;
+  });
+
+  const totalRevenue = filteredFeed.reduce((sum, item) => sum + (item.amount || 0), 0);
+
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 font-inter">
-        <div className="bg-[#0f111a] w-full max-w-md p-12 rounded-[3.5rem] border border-white/5 text-center shadow-3xl">
-          <div className="w-24 h-24 bg-orange-600 rounded-3xl flex items-center justify-center mx-auto mb-10 shadow-2xl shadow-orange-900/40">
-            <ShieldCheck size={48} className="text-white"/>
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-inter">
+        <div className="bg-white w-full max-w-sm p-10 rounded-3xl shadow-2xl text-center border border-white/10 animate-fade-in">
+          <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <ShieldCheck size={32} className="text-white"/>
           </div>
-          <h2 className="text-4xl font-black text-white mb-2 tracking-tighter uppercase leading-none">Master <br/> Portal</h2>
-          <p className="text-slate-500 font-bold mb-10 text-[10px] tracking-[0.4em] uppercase">Global Suite Control</p>
-          <div className="space-y-4 text-left">
-            <div className="space-y-1">
-               <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-4">Authorized User</label>
-               <input type="text" placeholder="Username" className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 px-8 text-white outline-none focus:border-orange-500 font-bold transition-all" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
-            </div>
-            <div className="space-y-1">
-               <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-4">Security Key</label>
-               <input type="password" placeholder="Password" className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 px-8 text-white outline-none focus:border-orange-500 font-bold transition-all" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} />
-            </div>
-            <button onClick={handleAdminLogin} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-xl hover:bg-orange-500 transition-all shadow-xl mt-6 active:scale-95">Access Terminal</button>
-            <button onClick={() => onNavigate('landing', '/')} className="w-full text-slate-600 font-black text-[10px] uppercase tracking-widest mt-6 hover:text-white transition-colors">Exit Control Panel</button>
+          <h2 className="text-xl font-black text-slate-900 mb-6 uppercase tracking-tight">Master Console</h2>
+          <div className="space-y-3 text-left">
+             <div className="space-y-1">
+               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Admin ID</label>
+               <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
+             </div>
+             <div className="space-y-1">
+               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Secret Key</label>
+               <input type="password" title="Key" className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} onKeyDown={e => e.key === 'Enter' && handleAdminLogin()} />
+             </div>
+             <button onClick={handleAdminLogin} className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-orange-600 transition-all shadow-lg active:scale-95 mt-4">Sisteme Giriş Yap</button>
           </div>
         </div>
       </div>
@@ -111,167 +116,261 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onNavigate }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#07080d] text-white flex font-inter selection:bg-orange-600">
-      {/* SaaS Sidebar */}
-      <aside className="w-80 bg-[#0c0e16] border-r border-white/5 p-12 flex flex-col gap-12 sticky top-0 h-screen shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center font-black">F</div>
-          <h1 className="text-xl font-black italic uppercase tracking-tighter">for<span className="text-orange-500">Guest</span></h1>
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex font-inter text-[13px]">
+      {/* Sidebar - Pro SaaS */}
+      <aside className="w-60 bg-slate-900 flex flex-col sticky top-0 h-screen shadow-2xl z-50">
+        <div className="p-6 flex items-center gap-2 border-b border-white/5 bg-slate-950/50">
+          <div className="w-8 h-8 bg-orange-600 rounded flex items-center justify-center text-white font-black italic shadow-lg">m</div>
+          <span className="font-bold text-white tracking-tight uppercase text-xs">Master <span className="text-orange-500">Suite</span></span>
         </div>
-        
-        <nav className="flex-1 space-y-3">
-          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-4 px-8 py-5 rounded-2xl font-black text-[10px] transition-all uppercase tracking-widest ${view === 'dashboard' ? 'bg-orange-600 shadow-xl shadow-orange-900/20' : 'text-slate-600 hover:bg-white/5'}`}><LayoutDashboard size={18}/> Overview</button>
-          <button onClick={() => setView('feed')} className={`w-full flex items-center gap-4 px-8 py-5 rounded-2xl font-black text-[10px] transition-all uppercase tracking-widest ${view === 'feed' ? 'bg-orange-600 shadow-xl shadow-orange-900/20' : 'text-slate-600 hover:bg-white/5'}`}><Activity size={18}/> Live Stream</button>
-          <button onClick={() => setView('hotels')} className={`w-full flex items-center gap-4 px-8 py-5 rounded-2xl font-black text-[10px] transition-all uppercase tracking-widest ${view === 'hotels' ? 'bg-orange-600 shadow-xl shadow-orange-900/20' : 'text-slate-600 hover:bg-white/5'}`}><Hotel size={18}/> Assets</button>
-          <button onClick={() => setView('applications')} className={`w-full flex items-center gap-4 px-8 py-5 rounded-2xl font-black text-[10px] transition-all uppercase tracking-widest ${view === 'applications' ? 'bg-orange-600 shadow-xl shadow-orange-900/20' : 'text-slate-600 hover:bg-white/5'}`}><FileText size={18}/> Requests ({applications.filter(a=>a.status === 'pending').length})</button>
+        <nav className="flex-1 p-3 space-y-1">
+          <button onClick={() => setView('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium ${view === 'dashboard' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><LayoutDashboard size={16}/> Dashboard</button>
+          <button onClick={() => setView('hotels')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium ${view === 'hotels' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Hotel size={16}/> Oteller</button>
+          <button onClick={() => setView('applications')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium ${view === 'applications' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><FileText size={16}/> Başvurular</button>
+          <button onClick={() => setView('feed')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all font-medium ${view === 'feed' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Activity size={16}/> Global Akış</button>
         </nav>
-        
-        <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-black text-[9px] text-slate-600 border border-white/5 hover:text-white transition-colors uppercase tracking-[0.3em]"><Home size={14}/> Exit Suite</button>
+        <div className="p-3 border-t border-white/5">
+          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-white font-bold uppercase tracking-widest text-[10px]"><Home size={14}/> Siteye Dön</button>
+        </div>
       </aside>
 
-      <main className="flex-1 p-20 overflow-y-auto no-scrollbar">
-        {view === 'dashboard' && (
-          <div className="space-y-20 animate-fade-in">
-            <div className="flex justify-between items-end">
-               <div>
-                  <p className="text-orange-500 font-black text-[10px] uppercase tracking-[0.5em] mb-4">Global Network</p>
-                  <h2 className="text-8xl font-black tracking-tighter leading-none">Command Center.</h2>
-               </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-8">
-               <div className="bg-[#0c0e16] p-16 rounded-[4rem] border border-white/5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-orange-600/10 blur-[60px]" />
-                  <p className="text-slate-500 font-black text-[10px] uppercase tracking-[0.4em] mb-6">Partner Hotels</p>
-                  <p className="text-8xl font-black tracking-tighter">{hotels.length}</p>
-               </div>
-               <div className="bg-[#0c0e16] p-16 rounded-[4rem] border border-white/5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/10 blur-[60px]" />
-                  <p className="text-slate-500 font-black text-[10px] uppercase tracking-[0.4em] mb-6">Total Operations</p>
-                  <p className="text-8xl font-black tracking-tighter">{globalFeed.length}</p>
-               </div>
-               <div className="bg-[#0c0e16] p-16 rounded-[4rem] border border-white/5 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-600/10 blur-[60px]" />
-                  <p className="text-slate-500 font-black text-[10px] uppercase tracking-[0.4em] mb-6">Pending Requests</p>
-                  <p className="text-8xl font-black tracking-tighter">{applications.filter(a => a.status === 'pending').length}</p>
-               </div>
+      <main className="flex-1 overflow-y-auto no-scrollbar">
+        <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-40 shadow-sm">
+          <div className="text-slate-400 font-semibold">Master / <span className="text-slate-900 capitalize">{view}</span></div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1 rounded-full">
+               <TrendingUp size={14} className="text-green-500" />
+               <span className="font-bold text-[11px] text-slate-600 uppercase">System Active</span>
             </div>
           </div>
-        )}
+        </header>
 
-        {view === 'applications' && (
-          <div className="space-y-12 animate-fade-in max-w-5xl">
-            <h2 className="text-6xl font-black tracking-tighter">Partner Requests.</h2>
+        <div className="p-8 space-y-6 max-w-7xl mx-auto">
+          {view === 'dashboard' && (
+            <div className="grid grid-cols-4 gap-6">
+               {[
+                 { label: 'Aktif Partnerler', val: hotels.length, color: 'text-blue-600' },
+                 { label: 'Bekleyen Başvuru', val: applications.filter(a=>a.status === 'pending').length, color: 'text-orange-600' },
+                 { label: 'Toplam İşlem', val: globalFeed.length, color: 'text-emerald-600' },
+                 { label: 'Network Durumu', val: 'Operational', color: 'text-slate-900' }
+               ].map((stat, i) => (
+                 <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm transition-transform hover:-translate-y-1">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{stat.label}</p>
+                    <p className={`text-2xl font-black ${stat.color}`}>{stat.val}</p>
+                 </div>
+               ))}
+            </div>
+          )}
+
+          {view === 'hotels' && (
             <div className="space-y-4">
-               {applications.length === 0 ? (
-                 <div className="p-20 text-center text-slate-500 font-black uppercase tracking-widest">No applications found.</div>
-               ) : applications.map(app => (
-                 <div key={app.id} className={`bg-[#0c0e16] p-12 rounded-[3.5rem] border flex items-center justify-between transition-all ${app.status === 'pending' ? 'border-orange-500/50' : 'border-white/5 opacity-60'}`}>
-                    <div>
-                      <h4 className="text-3xl font-black tracking-tight mb-2">{app.hotel_name}</h4>
-                      <div className="flex gap-6 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                         <span className="flex items-center gap-2"><User size={12}/> {app.contact_name}</span>
-                         <span className="flex items-center gap-2"><Mail size={12}/> {app.email}</span>
-                         <span className="flex items-center gap-2"><Phone size={12}/> {app.phone}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-6">
-                       {app.status === 'pending' ? (
-                         <div className="flex gap-2">
-                           <button onClick={() => updateAppStatus(app.id, 'reviewed')} className="bg-white/5 px-6 py-3 rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-white/10">Mark as Seen</button>
-                           <button onClick={() => { setEditingHotel({ name: app.hotel_name }); setView('hotels'); }} className="bg-orange-600 px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-orange-500">Integrate</button>
-                         </div>
-                       ) : (
-                         <span className="text-emerald-500 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"><CheckCircle2 size={16}/> Processed</span>
-                       )}
-                    </div>
-                 </div>
-               ))}
+               <div className="flex justify-between items-center">
+                  <h2 className="text-base font-black tracking-tight uppercase">Partner Otel Portföyü</h2>
+                  <button onClick={() => setEditingHotel({})} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-orange-600 transition-all shadow-lg"><Plus size={14}/> Yeni Partner</button>
+               </div>
+               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                       <tr>
+                          <th className="px-6 py-4">Tesis Markası</th>
+                          <th className="px-6 py-4">Sistem ID</th>
+                          <th className="px-6 py-4">Giriş Anahtarı</th>
+                          <th className="px-6 py-4 text-right">Aksiyonlar</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                       {hotels.map(h => (
+                         <tr key={h.id} className="hover:bg-slate-50/50 group transition-colors">
+                            <td className="px-6 py-4">
+                               <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 p-1 flex items-center justify-center shadow-sm">
+                                     <img src={h.logo_url} className="w-full h-full object-contain" />
+                                  </div>
+                                  <p className="font-bold text-slate-900">{h.name}</p>
+                               </div>
+                            </td>
+                            <td className="px-6 py-4 font-mono text-[11px] text-slate-500">{h.username}</td>
+                            <td className="px-6 py-4 font-mono text-[11px] text-slate-500">{h.password}</td>
+                            <td className="px-6 py-4 text-right">
+                               <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button onClick={() => onNavigate('hotel_dashboard', `/otel-admin/${h.id}`, h.id)} className="p-2 hover:bg-blue-50 text-blue-600 rounded-md transition-colors" title="İzleme"><ExternalLink size={14}/></button>
+                                  <button onClick={() => setEditingHotel(h)} className="p-2 hover:bg-slate-100 text-slate-400 rounded-md transition-colors"><Settings size={14}/></button>
+                                  <button onClick={async () => { if(confirm('Sözleşmeyi sonlandır?')) { await supabase.from('hotels').delete().eq('id', h.id); fetchHotels(); } }} className="p-2 hover:bg-rose-50 text-rose-500 rounded-md transition-colors"><Trash2 size={14}/></button>
+                               </div>
+                            </td>
+                         </tr>
+                       ))}
+                    </tbody>
+                  </table>
+               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {view === 'feed' && (
-          <div className="space-y-12 animate-fade-in max-w-5xl">
-            <h2 className="text-6xl font-black tracking-tighter">Live Stream.</h2>
+          {view === 'applications' && (
             <div className="space-y-4">
-               {globalFeed.map((o: any) => (
-                 <div key={o.id} className="bg-[#0c0e16] p-12 rounded-[3.5rem] border border-white/5 flex items-center justify-between group hover:border-orange-500/30 transition-all">
-                    <div className="flex items-center gap-12">
-                       <div className="w-16 h-16 bg-white/5 rounded-2xl flex flex-col items-center justify-center border border-white/10 group-hover:bg-orange-600/10 transition-colors">
-                          <span className="text-[8px] font-black text-slate-500 uppercase">Unit</span>
-                          <span className="text-2xl font-black">{o.room_number}</span>
-                       </div>
-                       <div>
-                          <p className="text-orange-600 text-[10px] font-black uppercase tracking-[0.3em] mb-2">{o.hotels?.name || 'Tesis'}</p>
-                          <h4 className="text-3xl font-black tracking-tight">{o.entryType === 'order' ? o.items.map((i:any)=>`${i.name}`).join(', ') : o.service_type}</h4>
-                          <p className="text-xs text-slate-500 mt-3 font-bold flex items-center gap-2"><Clock size={12}/> {new Date(o.created_at).toLocaleTimeString()}</p>
-                       </div>
-                    </div>
-                 </div>
-               ))}
+               <h2 className="text-base font-black tracking-tight uppercase">Yeni Tesis Başvuruları</h2>
+               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        <tr>
+                           <th className="px-6 py-4">Tesis Adı</th>
+                           <th className="px-6 py-4">İletişim Detayları</th>
+                           <th className="px-6 py-4">Durum</th>
+                           <th className="px-6 py-4 text-right">Operasyon</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {applications.map(app => (
+                          <tr key={app.id} className="hover:bg-slate-50/50 transition-colors">
+                             <td className="px-6 py-4"><p className="font-bold text-slate-900">{app.hotel_name}</p><p className="text-[10px] text-slate-400 font-medium">{new Date(app.created_at).toLocaleDateString()}</p></td>
+                             <td className="px-6 py-4 text-[11px] font-semibold text-slate-500">
+                                <div className="flex flex-col gap-0.5">
+                                   <span className="flex items-center gap-2"><Mail size={12} className="text-slate-400"/> {app.email}</span>
+                                   <span className="flex items-center gap-2"><Phone size={12} className="text-slate-400"/> {app.phone}</span>
+                                </div>
+                             </td>
+                             <td className="px-6 py-4">
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter ${app.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>{app.status}</span>
+                             </td>
+                             <td className="px-6 py-4 text-right">
+                                <button onClick={() => { setEditingHotel({ name: app.hotel_name }); setView('hotels'); }} className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-[10px] font-black hover:bg-orange-600 transition-all uppercase tracking-widest">Entegrasyonu Başlat</button>
+                             </td>
+                          </tr>
+                        ))}
+                     </tbody>
+                  </table>
+               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {view === 'hotels' && (
-          <div className="space-y-16 animate-fade-in">
-            <div className="flex justify-between items-end">
-               <h2 className="text-6xl font-black tracking-tighter">Global Assets</h2>
-               <button onClick={() => setEditingHotel({})} className="bg-orange-600 text-white px-10 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-2xl hover:scale-105 transition-all text-xs uppercase tracking-widest"><Plus size={20}/> New Partner</button>
+          {view === 'feed' && (
+            <div className="space-y-6">
+               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                  <div className="space-y-1">
+                     <h2 className="text-base font-black tracking-tight uppercase">Global Servis Günlüğü</h2>
+                     <p className="text-slate-400 text-xs">Ağdaki tüm canlı operasyonel veriler.</p>
+                  </div>
+                  
+                  {/* Revenue Widget */}
+                  <div className="bg-slate-900 text-white px-6 py-4 rounded-2xl flex items-center gap-6 shadow-xl">
+                     <div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Filtrelenmiş Ciro</p>
+                        <p className="text-2xl font-black text-orange-500">₺{totalRevenue.toLocaleString()}</p>
+                     </div>
+                     <div className="w-px h-10 bg-white/10"></div>
+                     <div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">İşlem Sayısı</p>
+                        <p className="text-2xl font-black">{filteredFeed.length}</p>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Filtreleme Barı */}
+               <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-center">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                     <Hotel size={14} className="text-slate-400" />
+                     <select className="bg-transparent outline-none font-bold text-xs text-slate-700" value={filterHotel} onChange={e => setFilterHotel(e.target.value)}>
+                        <option value="all">Tüm Oteller</option>
+                        {hotels.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                     </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                     <Activity size={14} className="text-slate-400" />
+                     <select className="bg-transparent outline-none font-bold text-xs text-slate-700" value={filterType} onChange={e => setFilterType(e.target.value)}>
+                        <option value="all">Tüm İşlemler</option>
+                        <option value="Sipariş">Siparişler</option>
+                        <option value="Hizmet">Hizmet Talepleri</option>
+                     </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                     <Filter size={14} className="text-slate-400" />
+                     <select className="bg-transparent outline-none font-bold text-xs text-slate-700" value={filterDept} onChange={e => setFilterDept(e.target.value)}>
+                        <option value="all">Tüm Departmanlar</option>
+                        <option value="food">Mutfak / Dining</option>
+                        <option value="market">Market / Retail</option>
+                        <option value="concierge">Concierge / Servis</option>
+                     </select>
+                  </div>
+
+                  <button onClick={() => { setFilterHotel('all'); setFilterType('all'); setFilterDept('all'); }} className="text-slate-400 hover:text-orange-600 font-bold text-[10px] uppercase tracking-widest ml-auto px-4">Filtreleri Sıfırla</button>
+               </div>
+
+               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left">
+                     <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                        <tr>
+                           <th className="px-6 py-4">İş Ortağı</th>
+                           <th className="px-6 py-4">Oda / Ünite</th>
+                           <th className="px-6 py-4">İşlem Detayı</th>
+                           <th className="px-6 py-4 text-right">Tutar</th>
+                           <th className="px-6 py-4 text-right">Timestamp</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {filteredFeed.length === 0 ? (
+                           <tr><td colSpan={5} className="px-6 py-20 text-center text-slate-400 font-black uppercase tracking-[0.2em] italic">Eşleşen operasyonel kayıt bulunamadı</td></tr>
+                        ) : filteredFeed.map((item: any, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50 transition-colors group">
+                             <td className="px-6 py-4">
+                                <p className="font-black text-orange-600">{item.hotels?.name || '---'}</p>
+                             </td>
+                             <td className="px-6 py-4 font-mono font-black text-slate-900">{item.room_number}</td>
+                             <td className="px-6 py-4">
+                                <div className="flex flex-col gap-0.5">
+                                   <div className="flex items-center gap-2">
+                                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${item.feedType === 'Sipariş' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                                         {item.feedType}
+                                      </span>
+                                      <span className="font-bold text-slate-600">{item.service_type || (item.items && item.items.length + ' Ürün')}</span>
+                                   </div>
+                                   {item.feedType === 'Sipariş' && (
+                                      <p className="text-[10px] text-slate-400 font-medium truncate max-w-xs">{item.items?.map((i:any)=>`${i.name} x${i.quantity}`).join(', ')}</p>
+                                   )}
+                                </div>
+                             </td>
+                             <td className="px-6 py-4 text-right">
+                                <p className={`font-black text-sm ${item.amount > 0 ? 'text-slate-900' : 'text-slate-300'}`}>
+                                   {item.amount > 0 ? `₺${item.amount.toLocaleString()}` : '-'}
+                                </p>
+                             </td>
+                             <td className="px-6 py-4 text-right text-slate-400 text-[11px] font-medium font-mono">{new Date(item.created_at).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                     </tbody>
+                  </table>
+               </div>
             </div>
-            <div className="grid grid-cols-1 gap-6">
-               {hotels.map(h => (
-                 <div key={h.id} className="bg-[#0c0e16] p-12 rounded-[4rem] border border-white/5 flex items-center justify-between group hover:border-orange-500/30 transition-all">
-                    <div className="flex items-center gap-12">
-                       <div className="w-24 h-24 bg-white rounded-3xl p-6 flex items-center justify-center shadow-inner overflow-hidden">
-                          <img src={h.logo_url} className="w-full h-full object-contain" alt={h.name} />
-                       </div>
-                       <div>
-                          <h4 className="text-4xl font-black tracking-tighter mb-2">{h.name}</h4>
-                       </div>
-                    </div>
-                    <div className="flex gap-3">
-                       <button onClick={() => onNavigate('hotel_dashboard', `/otel-admin/${h.id}`, h.id)} className="p-6 bg-white/5 rounded-[2rem] text-slate-500 hover:text-white hover:bg-white/10 transition-all" title="Master Login"><User size={28}/></button>
-                       <button onClick={() => setEditingHotel(h)} className="p-6 bg-white/5 rounded-[2rem] text-slate-500 hover:text-orange-500 hover:bg-white/10 transition-all"><Settings size={28}/></button>
-                       <button onClick={async () => { if(confirm(`${h.name} tesisini silmek istediğinize emin misiniz?`)) { await supabase.from('hotels').delete().eq('id', h.id); fetchHotels(); } }} className="p-6 bg-white/5 rounded-[2rem] text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 transition-all"><Trash2 size={28}/></button>
-                    </div>
-                 </div>
-               ))}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
 
+      {/* Partner Onboarding Modal */}
       {editingHotel && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-3xl flex items-center justify-center p-6">
-           <div className="bg-[#0c0e16] p-16 rounded-[4rem] w-full max-w-2xl border border-white/10 shadow-3xl animate-fade-in">
-              <div className="flex justify-between items-center mb-12">
-                <h3 className="text-4xl font-black tracking-tighter">{editingHotel.id ? 'Edit Partner' : 'New Strategic Partner'}</h3>
-                <button onClick={() => setEditingHotel(null)} className="p-4 bg-white/5 rounded-full hover:bg-white/10 transition-all"><X size={28}/></button>
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6">
+           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-8 border border-slate-200 animate-fade-in">
+              <div className="flex justify-between items-center border-b border-slate-50 pb-4 mb-6">
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">Stratejik Partner Entegrasyonu</h3>
+                <button onClick={() => setEditingHotel(null)} className="text-slate-400 hover:text-slate-600"><X size={18}/></button>
               </div>
-              <div className="space-y-8">
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-6">Corporate Entity Name</label>
-                    <input type="text" placeholder="Hotel Name" className="w-full p-8 bg-white/5 border border-white/10 rounded-[2.5rem] outline-none focus:border-orange-500 transition-all font-black text-2xl" value={editingHotel.name || ''} onChange={e => setEditingHotel({...editingHotel, name: e.target.value})} />
+              <div className="space-y-4">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Tesis Adı</label>
+                    <input className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-orange-500 font-bold" value={editingHotel.name || ''} onChange={e => setEditingHotel({...editingHotel, name: e.target.value})} />
                  </div>
-                 <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-6">Administrative ID</label>
-                       <input type="text" placeholder="username" className="w-full p-8 bg-white/5 border border-white/10 rounded-[2.5rem] outline-none focus:border-orange-500 transition-all font-bold" value={editingHotel.username || ''} onChange={e => setEditingHotel({...editingHotel, username: e.target.value})} />
-                    </div>
-                    <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-6">Security Access Key</label>
-                       <input type="text" placeholder="password" className="w-full p-8 bg-white/5 border border-white/10 rounded-[2.5rem] outline-none focus:border-orange-500 transition-all font-bold" value={editingHotel.password || ''} onChange={e => setEditingHotel({...editingHotel, password: e.target.value})} />
-                    </div>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">İstemci ID (Admin)</label>
+                    <input className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-orange-500 font-bold" value={editingHotel.username || ''} onChange={e => setEditingHotel({...editingHotel, username: e.target.value})} />
                  </div>
-                 <button 
-                  onClick={saveHotel} 
-                  disabled={isUploading} 
-                  className="w-full bg-orange-600 text-white py-8 rounded-[2.5rem] font-black text-2xl hover:bg-white hover:text-slate-900 transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-4 mt-6"
-                >
-                  {isUploading ? <Loader2 className="animate-spin" /> : 'Confirm Integration'}
-                </button>
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Güvenlik Tokeni</label>
+                    <input className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-orange-500 font-bold" value={editingHotel.password || ''} onChange={e => setEditingHotel({...editingHotel, password: e.target.value})} />
+                 </div>
+                 <button onClick={saveHotel} disabled={isUploading} className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-black text-xs uppercase tracking-[0.2em] hover:bg-orange-600 transition-all shadow-xl shadow-slate-900/10 mt-4">
+                    {isUploading ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Konfigürasyonu Onayla'}
+                 </button>
+                 <button onClick={() => setEditingHotel(null)} className="w-full text-slate-400 font-bold text-[10px] py-1 uppercase tracking-widest hover:text-slate-600">İşlemi İptal Et</button>
               </div>
            </div>
         </div>
