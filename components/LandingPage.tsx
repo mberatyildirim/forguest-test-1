@@ -64,9 +64,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onNavigate }) => {
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 px-6 py-4 flex justify-between items-center bg-white/80 backdrop-blur-md border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => onNavigate('landing', '/')}>
-          <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center text-white shadow-lg">
-            <Sparkles size={20} />
-          </div>
           <span className="font-bold text-2xl tracking-tight uppercase italic">for<span className="text-orange-600">Guest</span></span>
         </div>
         <div className="hidden md:flex gap-8 items-center text-xs font-bold uppercase tracking-widest text-slate-500">
