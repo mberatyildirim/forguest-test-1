@@ -11,7 +11,7 @@ import { TRANSLATIONS, SERVICE_ICONS } from './constants';
 import { 
   UtensilsCrossed, Store, Wifi, Clock, ShoppingBasket, ShieldCheck, 
   MapPin, Star, Home as HomeIcon, BellRing, Headphones, Loader2, 
-  ChevronRight, Heart, Star as StarFilled
+  ChevronRight, ChevronLeft, Heart, Star as StarFilled
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -40,7 +40,14 @@ const App: React.FC = () => {
   const navigateTo = (mode: PanelState, path: string = '/', hId?: string) => {
     setPanelMode(mode);
     if (hId) setActiveHotelId(hId);
-    window.history.pushState({}, '', path);
+    
+    try {
+      const url = new URL(window.location.href);
+      const newPath = path.startsWith('/') ? path : `/${path}`;
+      window.history.pushState({}, '', newPath);
+    } catch (e) {
+      console.warn("URL update failed due to sandbox restrictions, navigating internally.");
+    }
   };
 
   useEffect(() => {
@@ -50,31 +57,37 @@ const App: React.FC = () => {
       const roomNumberParam = urlParams.get('roomNumber');
       const pathParts = window.location.pathname.split('/').filter(p => p);
       
-      if (pathParts.includes('super-admin')) {
-        setPanelMode('admin_dashboard');
-      } else if (pathParts.includes('otel-login')) {
-        setPanelMode('hotel_login');
-      } else if (pathParts.includes('otel-admin')) {
-        const hId = pathParts[pathParts.indexOf('otel-admin') + 1];
-        if (hId) { setActiveHotelId(hId); setPanelMode('hotel_dashboard'); }
-      } 
-      // Case 1: Path based /hotelId/roomNumber
-      else if (pathParts.length >= 2) {
-        setPanelMode('guest');
-        loadHotelData(pathParts[0], pathParts[1]);
-      } 
-      // Case 2: Query param based ?ouid=...&roomNumber=...
-      else if (hotelIdParam && roomNumberParam) {
+      if (hotelIdParam && roomNumberParam) {
         setPanelMode('guest');
         loadHotelData(hotelIdParam, roomNumberParam);
+        return;
       }
-      // Default: Landing Website
-      else {
-        setPanelMode('landing');
-      }
+
+      if (pathParts.includes('super-admin')) {
+        setPanelMode('admin_dashboard');
+        return;
+      } 
+      
+      if (pathParts.includes('otel-login')) {
+        setPanelMode('hotel_login');
+        return;
+      } 
+      
+      if (pathParts.includes('otel-admin')) {
+        const hId = pathParts[pathParts.indexOf('otel-admin') + 1];
+        if (hId) { 
+          setActiveHotelId(hId); 
+          setPanelMode('hotel_dashboard'); 
+          return;
+        }
+      } 
+
+      setPanelMode('landing');
     };
+
     handleRoute();
     window.addEventListener('popstate', handleRoute);
+    return () => window.removeEventListener('popstate', handleRoute);
   }, []);
 
   const loadHotelData = async (hotelId: string, room: string) => {
@@ -90,8 +103,12 @@ const App: React.FC = () => {
         setMenuItems([...(kData || []), ...marketItems]);
         const { data: sSettings } = await supabase.from('hotel_service_settings').select('global_services(*)').eq('hotel_id', hotelId).eq('is_active', true);
         setActiveServices(sSettings?.map((s: any) => s.global_services) || []);
+      } else {
+        setPanelMode('landing');
       }
-    } catch (e) {}
+    } catch (e) {
+      setPanelMode('landing');
+    }
     setLoading(false);
   };
 
@@ -140,148 +157,141 @@ const App: React.FC = () => {
   if (panelMode === 'admin_dashboard') return <AdminPanel onNavigate={navigateTo} />;
   if (panelMode === 'hotel_dashboard' && activeHotelId) return <HotelPanel onNavigate={navigateTo} hotelIdProp={activeHotelId} />;
   if (panelMode === 'hotel_login') return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 text-white font-inter">
-      <div className="bg-[#0f172a] w-full max-w-sm p-10 rounded-[2.5rem] shadow-2xl border border-white/5 text-center">
-        <h2 className="text-2xl font-black mb-8 uppercase">Otel Girişi</h2>
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 text-white font-inter text-center">
+      <div className="bg-[#0f172a] w-full max-w-sm p-10 rounded-[2.5rem] shadow-2xl border border-white/5 relative">
+        <button onClick={() => navigateTo('landing', '/')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-1 text-[10px] font-bold uppercase transition-colors">
+          <ChevronLeft size={16} /> Geri
+        </button>
+        <h2 className="text-2xl font-black mb-8 uppercase mt-6">Otel Girişi</h2>
         <div className="space-y-4">
           <input type="text" placeholder="Kullanıcı" className="w-full bg-[#1e293b] border border-white/5 text-white rounded-xl py-4 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
           <input type="password" placeholder="Şifre" className="w-full bg-[#1e293b] border border-white/5 text-white rounded-xl py-4 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} onKeyDown={e => e.key === 'Enter' && handleHotelLogin()} />
-          <button onClick={handleHotelLogin} disabled={isLoggingIn} className="w-full bg-orange-600 text-white py-4 rounded-xl font-black text-xs uppercase shadow-xl">{isLoggingIn ? <Loader2 className="animate-spin mx-auto"/> : 'Sisteme Bağlan'}</button>
-          <button onClick={() => navigateTo('landing', '/')} className="text-slate-500 font-bold text-[10px] uppercase mt-2">İptal</button>
+          <button onClick={handleHotelLogin} disabled={isLoggingIn} className="w-full bg-orange-600 text-white py-4 rounded-xl font-black text-xs uppercase shadow-xl hover:bg-orange-500 transition-all">
+            {isLoggingIn ? <Loader2 className="animate-spin mx-auto"/> : 'Sisteme Bağlan'}
+          </button>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 font-inter no-scrollbar">
+    <div className="min-h-screen bg-[#020617] text-slate-100 font-inter no-scrollbar selection:bg-orange-600/30">
       <Header currentView={currentView} onNavigate={setCurrentView} cartCount={cart.length} lang={lang} setLang={setLang} />
       
       <main className="max-w-xl mx-auto px-5 pt-4 pb-32">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-40"><div className="w-10 h-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>
+          <div className="flex flex-col items-center justify-center py-40 animate-pulse">
+            <div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Yükleniyor...</p>
+          </div>
         ) : hotel && (
           <div className="space-y-6 animate-fade-in">
              {currentView === 'home' && (
                <>
-                 {/* Hero Section - Reduced height from h-96 to h-64 */}
                  <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0f172a] h-64 shadow-2xl">
                     <img src={hotel.banner_url || "https://images.unsplash.com/photo-1618773928121-c32242e63f39"} className="w-full h-full object-cover opacity-80" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent" />
-                    <div className="absolute bottom-0 left-0 p-8 w-full space-y-3">
-                       <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#020617]/20 to-transparent" />
+                    <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full space-y-2">
+                       <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
                           <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                          <span className="text-white font-black uppercase text-[10px] tracking-widest">{hotel.name}</span>
+                          <span className="text-white font-black uppercase text-[9px] tracking-widest">{hotel.name}</span>
                        </div>
-                       <h2 className="text-3xl font-black text-white leading-tight">Hoşgeldiniz,<br/>Sayın Misafirimiz</h2>
-                       <div className="inline-block bg-white/10 backdrop-blur-xl px-6 py-2 rounded-2xl border border-white/20">
-                          <span className="text-white font-bold text-xs">Oda {roomNumber}</span>
-                       </div>
-                    </div>
-                 </div>
-
-                 {/* Quick Info Cards */}
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="action-card p-6 flex flex-col items-start gap-4">
-                       <div className="w-10 h-10 bg-blue-500/10 rounded-full flex items-center justify-center icon-glow-blue">
-                          <Wifi size={20} className="text-blue-400" />
-                       </div>
-                       <div>
-                          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.wifi}</p>
-                          <p className="font-black text-white text-lg tracking-tight">{hotel.wifi_name}</p>
-                       </div>
-                    </div>
-                    <div className="action-card p-6 flex flex-col items-start gap-4">
-                       <div className="w-10 h-10 bg-rose-500/10 rounded-full flex items-center justify-center icon-glow-purple">
-                          <Clock size={20} className="text-rose-400" />
-                       </div>
-                       <div>
-                          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.checkout}</p>
-                          <p className="font-black text-white text-lg tracking-tight">{hotel.checkout_time}</p>
+                       <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">Hoşgeldiniz,<br/>Sayın Misafirimiz</h2>
+                       <div className="inline-block bg-white/10 backdrop-blur-xl px-4 py-1.5 rounded-xl border border-white/20">
+                          <span className="text-white font-bold text-[11px]">Oda {roomNumber}</span>
                        </div>
                     </div>
                  </div>
 
-                 {/* Main Action Grid */}
                  <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card p-8 flex flex-col items-start text-left gap-6 group">
+                    <div className="action-card p-5 md:p-6 flex flex-col items-start gap-4">
+                       <div className="w-9 h-9 bg-blue-500/10 rounded-full flex items-center justify-center icon-glow-blue">
+                          <Wifi size={18} className="text-blue-400" />
+                       </div>
+                       <div>
+                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.wifi}</p>
+                          <p className="font-black text-white text-base tracking-tight truncate w-full">{hotel.wifi_name}</p>
+                       </div>
+                    </div>
+                    <div className="action-card p-5 md:p-6 flex flex-col items-start gap-4">
+                       <div className="w-9 h-9 bg-rose-500/10 rounded-full flex items-center justify-center icon-glow-purple">
+                          <Clock size={18} className="text-rose-400" />
+                       </div>
+                       <div>
+                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.checkout}</p>
+                          <p className="font-black text-white text-base tracking-tight">{hotel.checkout_time}</p>
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* Kare Butonlar ve Gelişmiş Efektler */}
+                 <div className="grid grid-cols-2 gap-4">
+                    <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
                        <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center icon-glow-orange group-hover:scale-110 transition-transform">
                           <UtensilsCrossed size={28} className="text-orange-500" />
                        </div>
                        <div className="space-y-1">
-                          <h3 className="font-black text-xl text-white">{t.food}</h3>
+                          <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.food}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.foodDesc}</p>
-                          <p className="text-slate-600 text-[10px] font-black">{t.foodHours}</p>
                        </div>
                     </button>
-                    <button onClick={() => { setDiningMode('market'); setCurrentView('dining'); }} className="action-card p-8 flex flex-col items-start text-left gap-6 group">
+                    <button onClick={() => { setDiningMode('market'); setCurrentView('dining'); }} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
                        <div className="w-14 h-14 bg-teal-500/10 rounded-2xl flex items-center justify-center icon-glow-teal group-hover:scale-110 transition-transform">
                           <Store size={28} className="text-teal-500" />
                        </div>
                        <div className="space-y-1">
-                          <h3 className="font-black text-xl text-white">{t.market}</h3>
+                          <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.market}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.marketDesc}</p>
-                          <p className="text-slate-600 text-[10px] font-black">{t.marketHours}</p>
                        </div>
                     </button>
-                    <button onClick={() => setCurrentView('amenities')} className="action-card p-8 flex flex-col items-start text-left gap-6 group">
+                    <button onClick={() => setCurrentView('amenities')} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
                        <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center icon-glow-blue group-hover:scale-110 transition-transform">
                           <BellRing size={28} className="text-blue-400" />
                        </div>
                        <div className="space-y-1">
-                          <h3 className="font-black text-xl text-white">{t.services}</h3>
+                          <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.services}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.servicesDesc}</p>
                        </div>
                     </button>
-                    <button onClick={() => window.open(`tel:${hotel.reception_phone}`)} className="action-card p-8 flex flex-col items-start text-left gap-6 group">
+                    <button onClick={() => window.open(`tel:${hotel.reception_phone}`)} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
                        <div className="w-14 h-14 bg-purple-500/10 rounded-2xl flex items-center justify-center icon-glow-purple group-hover:scale-110 transition-transform">
                           <Headphones size={28} className="text-purple-400" />
                        </div>
                        <div className="space-y-1">
-                          <h3 className="font-black text-xl text-white">{t.reception}</h3>
+                          <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.reception}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.receptionDesc}</p>
                        </div>
                     </button>
                  </div>
 
-                 {/* Social Links Section */}
                  <div className="pt-8 space-y-6">
-                    <div className="flex items-center gap-2 text-slate-500">
+                    <div className="flex items-center gap-2 text-slate-500 px-2">
                        <Star size={12} className="text-orange-500 fill-orange-500" />
                        <p className="text-[10px] font-black uppercase tracking-[0.2em]">{t.rateUs}</p>
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                        {hotel.airbnb_url && (
-                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex flex-col items-center gap-3 hover:bg-white/5">
+                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5">
                             <div className="w-10 h-10 bg-rose-500/10 rounded-full flex items-center justify-center text-rose-500">
-                               <StarFilled size={20} fill="currentColor" />
+                               <StarFilled size={18} fill="currentColor" />
                             </div>
-                            <div className="text-center">
-                               <p className="font-black text-white text-[11px]">Airbnb</p>
-                               <p className="text-slate-500 text-[9px] mt-1">Deneyiminizi paylaşın</p>
-                            </div>
+                            <p className="font-black text-white text-[10px] uppercase">Airbnb</p>
                          </a>
                        )}
                        {hotel.google_maps_url && (
-                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex flex-col items-center gap-3 hover:bg-white/5">
+                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5">
                             <div className="w-10 h-10 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500">
-                               <MapPin size={20} fill="currentColor" />
+                               <MapPin size={18} fill="currentColor" />
                             </div>
-                            <div className="text-center">
-                               <p className="font-black text-white text-[11px]">Google</p>
-                               <p className="text-slate-500 text-[9px] mt-1">Deneyiminizi paylaşın</p>
-                            </div>
+                            <p className="font-black text-white text-[10px] uppercase">Google</p>
                          </a>
                        )}
                        {hotel.booking_url && (
-                         <a href={hotel.booking_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex flex-col items-center gap-3 hover:bg-white/5">
+                         <a href={hotel.booking_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5 border-emerald-500/20">
                             <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500">
-                               <Heart size={20} fill="currentColor" />
+                               <Heart size={18} fill="currentColor" />
                             </div>
-                            <div className="text-center">
-                               <p className="font-black text-white text-[11px]">Booking</p>
-                               <p className="text-slate-500 text-[9px] mt-1">Deneyiminizi paylaşın</p>
-                            </div>
+                            <p className="font-black text-white text-[10px] uppercase">Booking</p>
                          </a>
                        )}
                     </div>
@@ -308,11 +318,11 @@ const App: React.FC = () => {
                   <h2 className="text-2xl font-black text-white uppercase tracking-tight">{t.services}</h2>
                   <div className="grid grid-cols-2 gap-4">
                     {activeServices.map(service => (
-                      <button key={service.id} onClick={() => handleServiceRequest(service)} className="action-card p-10 flex flex-col items-center gap-6 group">
+                      <button key={service.id} onClick={() => handleServiceRequest(service)} className="action-card aspect-square p-8 flex flex-col items-center justify-between group">
                         <div className="text-orange-500 group-hover:scale-110 transition-transform icon-glow-orange">
                           {SERVICE_ICONS[service.name_key] || <BellRing size={28}/>}
                         </div>
-                        <span className="font-black text-white text-[11px] uppercase tracking-widest">{t.serviceNames[service.name_key as keyof typeof t.serviceNames] || service.name_key}</span>
+                        <span className="font-black text-white text-[11px] uppercase tracking-widest text-center">{t.serviceNames[service.name_key as keyof typeof t.serviceNames] || service.name_key}</span>
                       </button>
                     ))}
                   </div>
@@ -323,28 +333,34 @@ const App: React.FC = () => {
                <div className="space-y-6 animate-fade-in">
                   <h2 className="text-2xl font-black text-white uppercase tracking-tight">Sepetim</h2>
                   {cart.length === 0 ? (
-                    <div className="text-center py-20 action-card px-12 text-slate-600"><ShoppingBasket size={48} className="mx-auto mb-4 opacity-20" /><p className="font-black uppercase tracking-widest text-[10px]">{t.emptyCart}</p></div>
+                    <div className="text-center py-24 action-card px-12 text-slate-600">
+                      <ShoppingBasket size={48} className="mx-auto mb-6 opacity-20" />
+                      <p className="font-black uppercase tracking-widest text-[11px]">{t.emptyCart}</p>
+                    </div>
                   ) : (
                     <div className="action-card overflow-hidden shadow-2xl">
                        <div className="divide-y divide-white/5">
                           {cart.map(item => (
                             <div key={item.id} className="p-6 flex items-center gap-4">
-                               <img src={item.image} className="w-20 h-20 rounded-2xl object-cover" />
-                               <div className="flex-1"><h4 className="font-black text-white text-xs uppercase">{item.name}</h4><p className="text-orange-500 font-black text-sm mt-1">₺{item.price * item.quantity}</p></div>
+                               <img src={item.image} className="w-20 h-20 rounded-2xl object-cover bg-black/40" />
+                               <div className="flex-1">
+                                 <h4 className="font-black text-white text-[11px] uppercase leading-tight line-clamp-1">{item.name}</h4>
+                                 <p className="text-orange-500 font-black text-sm mt-1">₺{item.price * item.quantity}</p>
+                               </div>
                                <div className="flex items-center gap-4 bg-white/5 px-4 py-2 rounded-2xl">
-                                  <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, quantity: Math.max(0, i.quantity - 1)} : i).filter(i => i.quantity > 0))} className="font-black text-slate-500 text-lg">-</button>
+                                  <button onClick={() => setCart(prev => prev.map(i => i.id === item.id ? {...i, quantity: Math.max(0, i.quantity - 1)} : i).filter(i => i.quantity > 0))} className="font-black text-slate-500 text-lg hover:text-white transition-colors">-</button>
                                   <span className="font-black text-white text-xs">{item.quantity}</span>
-                                  <button onClick={() => addToCart(item)} className="font-black text-orange-600 text-lg">+</button>
+                                  <button onClick={() => addToCart(item)} className="font-black text-orange-600 text-lg hover:text-orange-500 transition-colors">+</button>
                                </div>
                             </div>
                           ))}
                        </div>
-                       <div className="p-10 bg-black/20 border-t border-white/5">
+                       <div className="p-8 md:p-10 bg-black/20 border-t border-white/5">
                           <div className="flex justify-between items-center mb-8">
                              <span className="text-slate-500 font-black uppercase text-[10px] tracking-widest">{t.total}</span>
                              <p className="text-4xl font-black text-white tracking-tighter">₺{cart.reduce((sum, item) => sum + (item.price * item.quantity), 0)}</p>
                           </div>
-                          <button onClick={() => setShowOrderConfirm(true)} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-sm uppercase shadow-2xl hover:bg-orange-500 transition-all">Siparişi Onayla</button>
+                          <button onClick={() => setShowOrderConfirm(true)} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-sm uppercase shadow-2xl hover:bg-orange-500 active:scale-95 transition-all">Siparişi Onayla</button>
                        </div>
                     </div>
                   )}
@@ -355,11 +371,11 @@ const App: React.FC = () => {
       </main>
 
       {/* Popups & Notifications */}
-      {notification && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[80] bg-orange-600 text-white px-8 py-4 rounded-full shadow-3xl flex items-center gap-3 border border-orange-500/30 font-black text-[10px] uppercase tracking-widest">{notification}</div>}
+      {notification && <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[80] bg-orange-600 text-white px-8 py-4 rounded-full shadow-3xl flex items-center gap-3 border border-orange-500/30 font-black text-[10px] uppercase tracking-widest animate-fade-in">{notification}</div>}
       
       {showOrderConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6">
-          <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-12 text-center shadow-3xl border border-white/10">
+          <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-10 md:p-12 text-center shadow-3xl border border-white/10 animate-fade-in">
              <div className="w-20 h-20 bg-orange-600/10 rounded-3xl flex items-center justify-center mx-auto mb-8 icon-glow-orange">
                 <ShieldCheck size={44} className="text-orange-600" />
              </div>
@@ -367,7 +383,7 @@ const App: React.FC = () => {
              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-10">Resepsiyon tarafından verilen kodu girin</p>
              <input type="text" maxLength={4} value={authInput} onChange={e => setAuthInput(e.target.value)} className="w-full bg-[#1e293b] border-2 border-white/5 rounded-3xl p-6 text-center text-5xl font-black mb-10 outline-none text-white shadow-inner tracking-[0.2em]" placeholder="0000" />
              <div className="space-y-4">
-                <button onClick={handleOrderSubmit} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-sm uppercase shadow-2xl">Doğrula ve Gönder</button>
+                <button onClick={handleOrderSubmit} className="w-full bg-orange-600 text-white py-5 rounded-2xl font-black text-sm uppercase shadow-2xl active:scale-95 transition-all hover:bg-orange-500">Doğrula ve Gönder</button>
                 <button onClick={() => setShowOrderConfirm(false)} className="text-slate-500 font-black text-[10px] uppercase hover:text-white transition-colors">Vazgeç</button>
              </div>
           </div>

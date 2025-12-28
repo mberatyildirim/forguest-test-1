@@ -20,18 +20,23 @@
         background: #0f172a;
         border: 1px solid rgba(255, 255, 255, 0.05);
         border-radius: 2rem;
-        transition: all 0.3s ease;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        position: relative;
+        overflow: hidden;
       }
 
+      /* Dokunulduğunda oluşan o özel yansıma ve parlama efekti */
       .action-card:active {
-        transform: scale(0.97);
-        background: #1e293b;
+        transform: scale(0.95);
+        border-color: rgba(249, 115, 22, 0.5);
+        box-shadow: 0 0 30px rgba(249, 115, 22, 0.2), inset 0 0 15px rgba(255, 255, 255, 0.05);
       }
 
-      .icon-glow-orange { filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.4)); }
-      .icon-glow-teal { filter: drop-shadow(0 0 8px rgba(20, 184, 166, 0.4)); }
-      .icon-glow-blue { filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.4)); }
-      .icon-glow-purple { filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.4)); }
+      /* İkonların parlaklığını artıran güçlendirilmiş katmanlar */
+      .icon-glow-orange { filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.7)); }
+      .icon-glow-teal { filter: drop-shadow(0 0 12px rgba(20, 184, 166, 0.7)); }
+      .icon-glow-blue { filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.7)); }
+      .icon-glow-purple { filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.7)); }
 
       .no-scrollbar::-webkit-scrollbar {
         display: none;
