@@ -3,7 +3,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, QrCode, Settings, Plus, Trash2, 
   X, Loader2, Save, Download, Edit3, Image as ImageIcon,
-  CheckCircle, Layers, Home, MapPin, Star, ExternalLink, Printer, ShoppingBag, Bell, LogOut, Search, ToggleLeft, ToggleRight
+  CheckCircle, Layers, Home, MapPin, Star, ExternalLink, Printer, ShoppingBag, Bell, LogOut, Search, ToggleLeft, ToggleRight,
+  Check, Play, Ban, CheckCircle2, Clock
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { MenuItem, Order, Room, Hotel, ServiceRequest, PanelState } from '../types';
@@ -32,6 +33,8 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [inventorySubView, setInventorySubView] = useState<'kitchen' | 'market' | 'services'>('kitchen');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const BASE_URL = "https://forguest-test-1.vercel.app";
 
   useEffect(() => {
     if (hotelIdProp) loadAllData(hotelIdProp);
@@ -71,7 +74,6 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     const table = type === 'market' ? 'hotel_market_settings' : 'hotel_service_settings';
     const idKey = type === 'market' ? 'item_id' : 'service_id';
     
-    // OPTIMISTIC UI: Update state immediately for zero latency feel
     if (type === 'market') {
       const isCurrentlyActive = activeMarketIds.includes(itemId);
       setActiveMarketIds(prev => isCurrentlyActive ? prev.filter(id => id !== itemId) : [...prev, itemId]);
@@ -91,6 +93,16 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
         await supabase.from(table).upsert({ hotel_id: hotelIdProp, [idKey]: itemId, is_active: true });
       }
     }
+  };
+
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    const { error } = await supabase.from('orders').update({ status }).eq('id', orderId);
+    if (!error) fetchOrders(hotelIdProp);
+  };
+
+  const updateServiceStatus = async (requestId: string, status: string) => {
+    const { error } = await supabase.from('service_requests').update({ status }).eq('id', requestId);
+    if (!error) fetchServiceRequests(hotelIdProp);
   };
 
   const handlePrintAllQR = () => {
@@ -119,7 +131,7 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   const handleSingleAdd = async () => {
     if (!singleRoomNum) return;
     setIsUploading(true);
-    const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${window.location.origin}/${hotelIdProp}/${singleRoomNum}`;
+    const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${BASE_URL}/${hotelIdProp}/${singleRoomNum}`;
     const { error } = await supabase.from('rooms').insert({ hotel_id: hotelIdProp, room_number: singleRoomNum, qr_url });
     if (!error) { setIsSingleAdding(false); setSingleRoomNum(''); fetchRooms(hotelIdProp); }
     setIsUploading(false);
@@ -131,7 +143,7 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     const newRooms = [];
     for (let i = bulkConfig.start; i <= bulkConfig.end; i++) {
       const roomNum = i.toString();
-      const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${window.location.origin}/${hotelIdProp}/${roomNum}`;
+      const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${BASE_URL}/${hotelIdProp}/${roomNum}`;
       newRooms.push({ hotel_id: hotelIdProp, room_number: roomNum, qr_url });
     }
     await supabase.from('rooms').insert(newRooms);
@@ -222,15 +234,49 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
               <div className="bg-[#0f172a] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-black/20 border-b border-white/5 text-slate-500 font-black uppercase tracking-widest">
-                    <tr><th className="px-6 py-4">Oda</th><th className="px-6 py-4">Tip</th><th className="px-6 py-4">Detay</th><th className="px-6 py-4 text-right">Durum</th></tr>
+                    <tr><th className="px-6 py-4">Tarih</th><th className="px-6 py-4">Oda</th><th className="px-6 py-4">Tip</th><th className="px-6 py-4">Detay</th><th className="px-6 py-4 text-right">Durum / İşlem</th></tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {combinedEntries.map((o: any) => (
                       <tr key={o.id} className="hover:bg-white/[0.02]">
-                        <td className="px-6 py-4 font-black text-white italic">{o.room_number}</td>
-                        <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase ${o.entryType === 'Sipariş' ? 'bg-blue-900/40 text-blue-400' : 'bg-purple-900/40 text-purple-400'}`}>{o.entryType}</span></td>
-                        <td className="px-6 py-4 text-slate-400">{o.entryType === 'Sipariş' ? (o.items || []).map((i:any)=>`${i.name} (x${i.quantity})`).join(', ') : o.service_type}</td>
-                        <td className="px-6 py-4 text-right"><span className="text-orange-500 font-black uppercase text-[10px]">{o.status}</span></td>
+                        <td className="px-6 py-4 text-slate-500 font-mono text-[10px]">
+                          {new Date(o.created_at).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td className="px-6 py-4 font-black text-white italic">ODA {o.room_number}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase ${o.entryType === 'Sipariş' ? 'bg-blue-900/40 text-blue-400' : 'bg-purple-900/40 text-purple-400'}`}>
+                            {o.entryType}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-400">
+                          {o.entryType === 'Sipariş' ? (o.items || []).map((i:any)=>`${i.name} (x${i.quantity})`).join(', ') : o.service_type}
+                        </td>
+                        <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                          {o.status === 'delivered' || o.status === 'completed' ? (
+                            <span className="flex items-center gap-1 text-emerald-500 font-black uppercase text-[10px]"><CheckCircle2 size={12}/> TAMAMLANDI</span>
+                          ) : o.status === 'cancelled' ? (
+                            <span className="flex items-center gap-1 text-slate-500 font-black uppercase text-[10px]"><Ban size={12}/> İPTAL EDİLDİ</span>
+                          ) : (
+                            <>
+                              {o.entryType === 'Sipariş' ? (
+                                <>
+                                  {o.status === 'pending' && (
+                                    <button onClick={() => updateOrderStatus(o.id, 'preparing')} className="bg-blue-600/10 text-blue-400 border border-blue-600/20 px-3 py-1.5 rounded-lg font-black uppercase text-[9px] flex items-center gap-1.5 hover:bg-blue-600 hover:text-white transition-all"><Play size={10}/> Hazırla</button>
+                                  )}
+                                  {o.status === 'preparing' && (
+                                    <button onClick={() => updateOrderStatus(o.id, 'delivered')} className="bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 px-3 py-1.5 rounded-lg font-black uppercase text-[9px] flex items-center gap-1.5 hover:bg-emerald-600 hover:text-white transition-all"><Check size={10}/> Teslim Et</button>
+                                  )}
+                                  <button onClick={() => updateOrderStatus(o.id, 'cancelled')} className="bg-rose-600/10 text-rose-400 border border-rose-600/20 px-3 py-1.5 rounded-lg font-black uppercase text-[9px] flex items-center gap-1.5 hover:bg-rose-600 hover:text-white transition-all"><X size={10}/> İptal</button>
+                                </>
+                              ) : (
+                                <>
+                                  <button onClick={() => updateServiceStatus(o.id, 'completed')} className="bg-emerald-600/10 text-emerald-400 border border-emerald-600/20 px-3 py-1.5 rounded-lg font-black uppercase text-[9px] flex items-center gap-1.5 hover:bg-emerald-600 hover:text-white transition-all"><Check size={10}/> Tamamla</button>
+                                  <button onClick={() => updateServiceStatus(o.id, 'cancelled')} className="bg-rose-600/10 text-rose-400 border border-rose-600/20 px-3 py-1.5 rounded-lg font-black uppercase text-[9px] flex items-center gap-1.5 hover:bg-rose-600 hover:text-white transition-all"><X size={10}/> İptal</button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -398,7 +444,7 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
         {/* Oda Ekle Modalları */}
         {isSingleAdding && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-            <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-10 border border-white/10 text-center animate-fade-in shadow-3xl">
+            <div className="bg-[#0f172a] w-full max-sm rounded-[3rem] p-10 border border-white/10 text-center animate-fade-in shadow-3xl">
               <h3 className="text-2xl font-black text-white mb-8 uppercase tracking-tight italic">Yeni Oda</h3>
               <input type="text" placeholder="No" className="w-full p-5 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none font-black text-center text-4xl mb-8 shadow-inner focus:border-orange-500 transition-all" value={singleRoomNum} onChange={e => setSingleRoomNum(e.target.value)} />
               <div className="flex gap-4">

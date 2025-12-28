@@ -110,7 +110,6 @@ const App: React.FC = () => {
     if (!error) { setCart([]); setShowOrderConfirm(false); setNotification(t.orderReceived); setCurrentView('home'); setAuthInput(''); }
   };
 
-  // Fix: Implemented missing handleServiceRequest function
   const handleServiceRequest = async (service: any) => {
     if (!hotel) return;
     const serviceName = t.serviceNames[service.name_key as keyof typeof t.serviceNames] || service.name_key;
@@ -187,9 +186,9 @@ const App: React.FC = () => {
                     </button>
                  </div>
                  <div className="pt-8 flex flex-wrap justify-center gap-2">
-                    {hotel.google_maps_url && <a href={hotel.google_maps_url} target="_blank" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-blue-600/20"><MapPin size={14} className="text-blue-500" /> Maps</a>}
-                    {hotel.airbnb_url && <a href={hotel.airbnb_url} target="_blank" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-rose-600/20"><HomeIcon size={14} className="text-rose-500" /> Airbnb</a>}
-                    {hotel.booking_url && <a href={hotel.booking_url} target="_blank" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-blue-400/20"><Star size={14} className="text-blue-400" /> Booking</a>}
+                    {hotel.google_maps_url && <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-blue-600/20"><MapPin size={14} className="text-blue-500" /> Maps</a>}
+                    {hotel.airbnb_url && <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-rose-600/20"><HomeIcon size={14} className="text-rose-500" /> Airbnb</a>}
+                    {hotel.booking_url && <a href={hotel.booking_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-[#1e293b] px-4 py-2.5 rounded-2xl border border-white/5 text-[10px] font-black uppercase text-white hover:bg-blue-400/20"><Star size={14} className="text-blue-400" /> Booking</a>}
                  </div>
                </>
              )}
