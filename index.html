@@ -11,54 +11,54 @@
 
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #020617;
+        background-color: #050a18;
         color: #f8fafc;
         -webkit-tap-highlight-color: transparent;
       }
       
       .action-card {
         background: #0f172a;
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 2rem;
-        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        border-radius: 2.5rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
       }
 
-      /* Dokunulduğunda oluşan o özel yansıma ve parlama efekti */
+      /* Dokunma anındaki elektrikli yansıma */
       .action-card:active {
-        transform: scale(0.95);
-        border-color: rgba(249, 115, 22, 0.5);
-        box-shadow: 0 0 30px rgba(249, 115, 22, 0.2), inset 0 0 15px rgba(255, 255, 255, 0.05);
+        transform: scale(0.96);
+        border-color: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 40px rgba(59, 130, 246, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.02);
       }
 
-      /* İkonların parlaklığını artıran güçlendirilmiş katmanlar */
-      .icon-glow-orange { filter: drop-shadow(0 0 12px rgba(249, 115, 22, 0.7)); }
-      .icon-glow-teal { filter: drop-shadow(0 0 12px rgba(20, 184, 166, 0.7)); }
-      .icon-glow-blue { filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.7)); }
-      .icon-glow-purple { filter: drop-shadow(0 0 12px rgba(168, 85, 247, 0.7)); }
+      /* Ultra-Neon Aura Efektleri */
+      .neon-glow-orange { box-shadow: 0 0 25px rgba(249, 115, 22, 0.4); }
+      .neon-glow-green { box-shadow: 0 0 25px rgba(16, 185, 129, 0.4); }
+      .neon-glow-blue { box-shadow: 0 0 25px rgba(59, 130, 246, 0.4); }
+      .neon-glow-purple { box-shadow: 0 0 25px rgba(168, 85, 247, 0.4); }
 
-      .no-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      .no-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
+      .icon-aura-orange { background: radial-gradient(circle, rgba(249, 115, 22, 0.3) 0%, transparent 70%); }
+      .icon-aura-green { background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%); }
+      .icon-aura-blue { background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%); }
+      .icon-aura-purple { background: radial-gradient(circle, rgba(168, 85, 247, 0.3) 0%, transparent 70%); }
+
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
       @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
+        from { opacity: 0; transform: translateY(15px); }
         to { opacity: 1; transform: translateY(0); }
       }
       
       .animate-fade-in {
-        animation: fadeIn 0.4s ease-out forwards;
+        animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       }
 
       .glass-header {
-        background: rgba(2, 6, 23, 0.8);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+        background: rgba(5, 10, 24, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
       }
     </style>
   <script type="importmap">

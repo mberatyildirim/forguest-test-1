@@ -5,18 +5,19 @@ import MenuCard from './components/MenuCard';
 import AdminPanel from './components/AdminPanel';
 import HotelPanel from './components/HotelPanel';
 import LandingPage from './components/LandingPage';
+import AIChat from './components/AIChat';
 import { ViewState, PanelState, CartItem, MenuItem, Language, Hotel } from './types';
 import { supabase } from './lib/supabase';
 import { TRANSLATIONS, SERVICE_ICONS } from './constants';
 import { 
   UtensilsCrossed, Store, Wifi, Clock, ShoppingBasket, ShieldCheck, 
   MapPin, Star, Home as HomeIcon, BellRing, Headphones, Loader2, 
-  ChevronRight, ChevronLeft, Heart, Star as StarFilled
+  ChevronRight, ChevronLeft, Heart, Star as StarFilled, Sparkles, ArrowRight
 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [panelMode, setPanelMode] = useState<PanelState>('landing');
-  const [currentView, setCurrentView] = useState<ViewState>('home');
+  const [currentView, setCurrentView] = useState('home');
   const [lang, setLang] = useState<Language>('tr');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [diningMode, setDiningMode] = useState<'food' | 'market'>('food');
@@ -52,26 +53,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleRoute = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
       const pathParts = window.location.pathname.split('/').filter(p => p);
       
-      // Case 1: Path based access /hotelId/roomNumber (Priority)
       if (pathParts.length >= 2 && pathParts[0].length > 20) {
         setPanelMode('guest');
         loadHotelData(pathParts[0], pathParts[1]);
         return;
       }
 
-      // Case 2: Query param fallback
-      const hotelIdParam = urlParams.get('ouid');
-      const roomNumberParam = urlParams.get('roomNumber');
-      if (hotelIdParam && roomNumberParam) {
-        setPanelMode('guest');
-        loadHotelData(hotelIdParam, roomNumberParam);
-        return;
-      }
-
-      // Special Admin routes
       if (pathParts.includes('super-admin')) {
         setPanelMode('admin_dashboard');
         return;
@@ -154,12 +143,29 @@ const App: React.FC = () => {
     }
   };
 
+  // Added handleHotelLogin to handle hotel admin authentication via Supabase
   const handleHotelLogin = async () => {
+    if (!loginForm.user || !loginForm.pass) return;
     setIsLoggingIn(true);
-    const { data } = await supabase.from('hotels').select('*').eq('username', loginForm.user).eq('password', loginForm.pass).single();
-    if (data) navigateTo('hotel_dashboard', `/otel-admin/${data.id}`, data.id);
-    else alert("Giriş başarısız.");
-    setIsLoggingIn(false);
+    try {
+      const { data, error } = await supabase
+        .from('hotels')
+        .select('id')
+        .eq('username', loginForm.user)
+        .eq('password', loginForm.pass)
+        .maybeSingle();
+
+      if (data) {
+        navigateTo('hotel_dashboard', `/otel-admin/${data.id}`, data.id);
+      } else {
+        alert("Kullanıcı adı veya şifre hatalı!");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Giriş sırasında bir hata oluştu.");
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   if (panelMode === 'landing') return <LandingPage onNavigate={navigateTo} />;
@@ -184,128 +190,130 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100 font-inter no-scrollbar selection:bg-orange-600/30">
-      <Header currentView={currentView} onNavigate={setCurrentView} cartCount={cart.length} lang={lang} setLang={setLang} />
+    <div className="min-h-screen bg-[#050a18] text-slate-100 font-inter no-scrollbar selection:bg-blue-600/30">
+      <Header currentView={currentView as ViewState} onNavigate={(v) => setCurrentView(v)} cartCount={cart.length} lang={lang} setLang={setLang} />
       
       <main className="max-w-xl mx-auto px-5 pt-4 pb-32">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-40 animate-pulse">
-            <div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Yükleniyor...</p>
+            <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Hazırlanıyor...</p>
           </div>
         ) : hotel && (
           <div className="space-y-6 animate-fade-in">
              {currentView === 'home' && (
                <>
-                 <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0f172a] h-64 shadow-2xl">
-                    <img src={hotel.banner_url || "https://images.unsplash.com/photo-1618773928121-c32242e63f39"} className="w-full h-full object-cover opacity-80" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#020617]/20 to-transparent" />
-                    <div className="absolute bottom-0 left-0 p-6 md:p-8 w-full space-y-2">
-                       <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-                          <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                          <span className="text-white font-black uppercase text-[9px] tracking-widest">{hotel.name}</span>
-                       </div>
-                       <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">Hoşgeldiniz,<br/>Sayın Misafirimiz</h2>
-                       <div className="inline-block bg-white/10 backdrop-blur-xl px-4 py-1.5 rounded-xl border border-white/20">
-                          <span className="text-white font-bold text-[11px]">Oda {roomNumber}</span>
-                       </div>
+                 {/* AI Assistant Banner */}
+                 <button 
+                   onClick={() => setCurrentView('info')}
+                   className="action-card w-full p-6 flex items-center gap-5 group border-orange-500/10 bg-gradient-to-r from-[#0f172a] to-[#1e293b]"
+                 >
+                    <div className="w-16 h-16 bg-orange-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-orange shrink-0">
+                       <Sparkles size={32} />
                     </div>
-                 </div>
+                    <div className="flex-1 text-left">
+                       <h3 className="text-xl font-black text-white uppercase tracking-tight">AI Assistant</h3>
+                       <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mt-0.5">Otel hakkında her şeyi sorun</p>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-500 group-hover:text-white group-hover:bg-white/10 transition-all">
+                       <ChevronRight size={20} />
+                    </div>
+                 </button>
 
+                 {/* 2x2 Grid - Visual Match */}
                  <div className="grid grid-cols-2 gap-4">
-                    <div className="action-card p-5 md:p-6 flex flex-col items-start gap-4">
-                       <div className="w-9 h-9 bg-blue-500/10 rounded-full flex items-center justify-center icon-glow-blue">
-                          <Wifi size={18} className="text-blue-400" />
-                       </div>
-                       <div>
-                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.wifi}</p>
-                          <p className="font-black text-white text-base tracking-tight truncate w-full">{hotel.wifi_name}</p>
-                       </div>
-                    </div>
-                    <div className="action-card p-5 md:p-6 flex flex-col items-start gap-4">
-                       <div className="w-9 h-9 bg-rose-500/10 rounded-full flex items-center justify-center icon-glow-purple">
-                          <Clock size={18} className="text-rose-400" />
-                       </div>
-                       <div>
-                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{t.checkout}</p>
-                          <p className="font-black text-white text-base tracking-tight">{hotel.checkout_time}</p>
-                       </div>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
-                       <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center icon-glow-orange group-hover:scale-110 transition-transform">
-                          <UtensilsCrossed size={28} className="text-orange-500" />
+                    <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
+                       <div className="relative">
+                          <div className="absolute inset-0 icon-aura-orange scale-150"></div>
+                          <div className="relative w-16 h-16 bg-orange-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-orange group-hover:scale-110 transition-transform">
+                             <UtensilsCrossed size={32} />
+                          </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.food}</h3>
-                          <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.foodDesc}</p>
+                          <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.foodDesc}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">{t.foodHours}</p>
                        </div>
                     </button>
-                    <button onClick={() => { setDiningMode('market'); setCurrentView('dining'); }} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
-                       <div className="w-14 h-14 bg-teal-500/10 rounded-2xl flex items-center justify-center icon-glow-teal group-hover:scale-110 transition-transform">
-                          <Store size={28} className="text-teal-500" />
+
+                    <button onClick={() => { setDiningMode('market'); setCurrentView('dining'); }} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
+                       <div className="relative">
+                          <div className="absolute inset-0 icon-aura-green scale-150"></div>
+                          <div className="relative w-16 h-16 bg-emerald-500 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-green group-hover:scale-110 transition-transform">
+                             <Store size={32} />
+                          </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.market}</h3>
-                          <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.marketDesc}</p>
+                          <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.marketDesc}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">{t.marketHours}</p>
                        </div>
                     </button>
-                    <button onClick={() => setCurrentView('amenities')} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
-                       <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center icon-glow-blue group-hover:scale-110 transition-transform">
-                          <BellRing size={28} className="text-blue-400" />
+
+                    <button onClick={() => setCurrentView('amenities')} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
+                       <div className="relative">
+                          <div className="absolute inset-0 icon-aura-blue scale-150"></div>
+                          <div className="relative w-16 h-16 bg-blue-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-blue group-hover:scale-110 transition-transform">
+                             <BellRing size={32} />
+                          </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.services}</h3>
-                          <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.servicesDesc}</p>
+                          <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.servicesDesc}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">Housekeeping & Teknik</p>
                        </div>
                     </button>
-                    <button onClick={() => window.open(`tel:${hotel.reception_phone}`)} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
-                       <div className="w-14 h-14 bg-purple-500/10 rounded-2xl flex items-center justify-center icon-glow-purple group-hover:scale-110 transition-transform">
-                          <Headphones size={28} className="text-purple-400" />
+
+                    <button onClick={() => window.open(`tel:${hotel.reception_phone}`)} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
+                       <div className="relative">
+                          <div className="absolute inset-0 icon-aura-purple scale-150"></div>
+                          <div className="relative w-16 h-16 bg-fuchsia-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-purple group-hover:scale-110 transition-transform">
+                             <Headphones size={32} />
+                          </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.reception}</h3>
-                          <p className="text-slate-500 text-[10px] font-bold leading-relaxed">{t.receptionDesc}</p>
+                          <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.receptionDesc}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">7/24 Canlı Destek</p>
                        </div>
                     </button>
                  </div>
 
-                 <div className="pt-8 space-y-6">
+                 {/* Rating Section - Improved Styling */}
+                 <div className="pt-10 space-y-6">
                     <div className="flex items-center gap-2 text-slate-500 px-2">
-                       <Star size={12} className="text-orange-500 fill-orange-500" />
-                       <p className="text-[10px] font-black uppercase tracking-[0.2em]">{t.rateUs}</p>
+                       <Star size={14} className="text-orange-500 fill-orange-500" />
+                       <p className="text-[11px] font-black uppercase tracking-[0.3em]">{t.rateUs}</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                        {hotel.airbnb_url && (
-                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5">
-                            <div className="w-10 h-10 bg-rose-500/10 rounded-full flex items-center justify-center text-rose-500">
-                               <StarFilled size={18} fill="currentColor" />
+                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:border-rose-500/30 transition-all">
+                            <div className="w-14 h-14 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform shrink-0">
+                               <StarFilled size={24} fill="currentColor" />
                             </div>
-                            <p className="font-black text-white text-[10px] uppercase">Airbnb</p>
+                            <div className="text-left">
+                               <h4 className="font-black text-white text-base uppercase tracking-tight">Airbnb</h4>
+                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">Deneyiminizi paylaşın</p>
+                            </div>
                          </a>
                        )}
                        {hotel.google_maps_url && (
-                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5">
-                            <div className="w-10 h-10 bg-blue-500/10 rounded-full flex items-center justify-center text-blue-500">
-                               <MapPin size={18} fill="currentColor" />
+                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:border-blue-500/30 transition-all">
+                            <div className="w-14 h-14 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform shrink-0">
+                               <MapPin size={24} fill="currentColor" />
                             </div>
-                            <p className="font-black text-white text-[10px] uppercase">Google</p>
-                         </a>
-                       )}
-                       {hotel.booking_url && (
-                         <a href={hotel.booking_url} target="_blank" rel="noopener noreferrer" className="action-card p-5 flex flex-col items-center gap-3 hover:bg-white/5 border-emerald-500/20">
-                            <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-500">
-                               <Heart size={18} fill="currentColor" />
+                            <div className="text-left">
+                               <h4 className="font-black text-white text-base uppercase tracking-tight">Google</h4>
+                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">Deneyiminizi paylaşın</p>
                             </div>
-                            <p className="font-black text-white text-[10px] uppercase">Booking</p>
                          </a>
                        )}
                     </div>
                  </div>
                </>
              )}
+
+             {currentView === 'info' && <AIChat hotelInfo={hotel} menuItems={menuItems} />}
 
              {currentView === 'dining' && (
                <div className="space-y-6 animate-fade-in">
@@ -327,8 +335,8 @@ const App: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     {activeServices.map(service => (
                       <button key={service.id} onClick={() => handleServiceRequest(service)} className="action-card aspect-square p-8 flex flex-col items-center justify-between group">
-                        <div className="text-orange-500 group-hover:scale-110 transition-transform icon-glow-orange">
-                          {SERVICE_ICONS[service.name_key] || <BellRing size={28}/>}
+                        <div className="text-orange-500 group-hover:scale-110 transition-transform neon-glow-orange">
+                          {SERVICE_ICONS[service.name_key] || <BellRing size={32}/>}
                         </div>
                         <span className="font-black text-white text-[11px] uppercase tracking-widest text-center">{t.serviceNames[service.name_key as keyof typeof t.serviceNames] || service.name_key}</span>
                       </button>
@@ -384,7 +392,7 @@ const App: React.FC = () => {
       {showOrderConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-xl p-6">
           <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-10 md:p-12 text-center shadow-3xl border border-white/10 animate-fade-in">
-             <div className="w-20 h-20 bg-orange-600/10 rounded-3xl flex items-center justify-center mx-auto mb-8 icon-glow-orange">
+             <div className="w-20 h-20 bg-orange-600/10 rounded-3xl flex items-center justify-center mx-auto mb-8 neon-glow-orange">
                 <ShieldCheck size={44} className="text-orange-600" />
              </div>
              <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tight">Onay Kodu</h3>
