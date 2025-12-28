@@ -12,12 +12,13 @@ import { TRANSLATIONS, SERVICE_ICONS } from './constants';
 import { 
   UtensilsCrossed, Store, Wifi, Clock, ShoppingBasket, ShieldCheck, 
   MapPin, Star, Home as HomeIcon, BellRing, Headphones, Loader2, 
-  ChevronRight, ChevronLeft, Heart, Star as StarFilled, Sparkles, ArrowRight
+  ChevronRight, ChevronLeft, Heart, Star as StarFilled, Sparkles, ArrowRight,
+  Globe as GlobeIcon
 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [panelMode, setPanelMode] = useState<PanelState>('landing');
-  const [currentView, setCurrentView] = useState('home');
+  const [currentView, setCurrentView] = useState<ViewState>('home');
   const [lang, setLang] = useState<Language>('tr');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [diningMode, setDiningMode] = useState<'food' | 'market'>('food');
@@ -143,41 +144,27 @@ const App: React.FC = () => {
     }
   };
 
-  // Added handleHotelLogin to handle hotel admin authentication via Supabase
   const handleHotelLogin = async () => {
     if (!loginForm.user || !loginForm.pass) return;
     setIsLoggingIn(true);
     try {
-      const { data, error } = await supabase
-        .from('hotels')
-        .select('id')
-        .eq('username', loginForm.user)
-        .eq('password', loginForm.pass)
-        .maybeSingle();
-
-      if (data) {
-        navigateTo('hotel_dashboard', `/otel-admin/${data.id}`, data.id);
-      } else {
-        alert("Kullanıcı adı veya şifre hatalı!");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Giriş sırasında bir hata oluştu.");
-    } finally {
-      setIsLoggingIn(false);
-    }
+      const { data } = await supabase.from('hotels').select('id').eq('username', loginForm.user).eq('password', loginForm.pass).maybeSingle();
+      if (data) navigateTo('hotel_dashboard', `/otel-admin/${data.id}`, data.id);
+      else alert("Hata: Kullanıcı adı veya şifre yanlış.");
+    } catch (e) { console.error(e); }
+    finally { setIsLoggingIn(false); }
   };
 
   if (panelMode === 'landing') return <LandingPage onNavigate={navigateTo} />;
   if (panelMode === 'admin_dashboard') return <AdminPanel onNavigate={navigateTo} />;
   if (panelMode === 'hotel_dashboard' && activeHotelId) return <HotelPanel onNavigate={navigateTo} hotelIdProp={activeHotelId} />;
   if (panelMode === 'hotel_login') return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 text-white font-inter text-center">
+    <div className="min-h-screen bg-[#050a18] flex items-center justify-center p-6 text-white font-inter text-center">
       <div className="bg-[#0f172a] w-full max-w-sm p-10 rounded-[2.5rem] shadow-2xl border border-white/5 relative">
         <button onClick={() => navigateTo('landing', '/')} className="absolute top-6 left-6 text-slate-500 hover:text-white flex items-center gap-1 text-[10px] font-bold uppercase transition-colors">
           <ChevronLeft size={16} /> Geri
         </button>
-        <h2 className="text-2xl font-black mb-8 uppercase mt-6">Otel Girişi</h2>
+        <h2 className="text-2xl font-black mb-8 uppercase mt-6 tracking-tight italic">Otel Girişi</h2>
         <div className="space-y-4">
           <input type="text" placeholder="Kullanıcı" className="w-full bg-[#1e293b] border border-white/5 text-white rounded-xl py-4 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
           <input type="password" placeholder="Şifre" className="w-full bg-[#1e293b] border border-white/5 text-white rounded-xl py-4 px-4 outline-none focus:border-orange-500 font-bold" value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} onKeyDown={e => e.key === 'Enter' && handleHotelLogin()} />
@@ -191,40 +178,43 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#050a18] text-slate-100 font-inter no-scrollbar selection:bg-blue-600/30">
-      <Header currentView={currentView as ViewState} onNavigate={(v) => setCurrentView(v)} cartCount={cart.length} lang={lang} setLang={setLang} />
+      <Header currentView={currentView} onNavigate={setCurrentView} cartCount={cart.length} lang={lang} setLang={setLang} />
       
       <main className="max-w-xl mx-auto px-5 pt-4 pb-32">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-40 animate-pulse">
-            <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <div className="w-12 h-12 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Hazırlanıyor...</p>
           </div>
         ) : hotel && (
           <div className="space-y-6 animate-fade-in">
              {currentView === 'home' && (
                <>
-                 {/* AI Assistant Banner */}
+                 {/* AI Assistant Banner - Exact Visual Match */}
                  <button 
                    onClick={() => setCurrentView('info')}
-                   className="action-card w-full p-6 flex items-center gap-5 group border-orange-500/10 bg-gradient-to-r from-[#0f172a] to-[#1e293b]"
+                   className="action-card w-full p-6 flex items-center gap-5 group border-white/5"
                  >
-                    <div className="w-16 h-16 bg-orange-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-orange shrink-0">
-                       <Sparkles size={32} />
+                    <div className="relative shrink-0">
+                       <div className="absolute inset-0 aura-orange scale-150"></div>
+                       <div className="relative w-16 h-16 bg-orange-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-orange">
+                          <Sparkles size={32} />
+                       </div>
                     </div>
                     <div className="flex-1 text-left">
                        <h3 className="text-xl font-black text-white uppercase tracking-tight">AI Assistant</h3>
                        <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mt-0.5">Otel hakkında her şeyi sorun</p>
                     </div>
                     <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-500 group-hover:text-white group-hover:bg-white/10 transition-all">
-                       <ChevronRight size={20} />
+                       <ArrowRight size={20} />
                     </div>
                  </button>
 
-                 {/* 2x2 Grid - Visual Match */}
+                 {/* 2x2 Grid - Visual Match with Neon Aura */}
                  <div className="grid grid-cols-2 gap-4">
                     <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
                        <div className="relative">
-                          <div className="absolute inset-0 icon-aura-orange scale-150"></div>
+                          <div className="absolute inset-0 aura-orange scale-150"></div>
                           <div className="relative w-16 h-16 bg-orange-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-orange group-hover:scale-110 transition-transform">
                              <UtensilsCrossed size={32} />
                           </div>
@@ -232,79 +222,93 @@ const App: React.FC = () => {
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.food}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.foodDesc}</p>
-                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">{t.foodHours}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-40">{t.foodHours}</p>
                        </div>
                     </button>
 
                     <button onClick={() => { setDiningMode('market'); setCurrentView('dining'); }} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
                        <div className="relative">
-                          <div className="absolute inset-0 icon-aura-green scale-150"></div>
-                          <div className="relative w-16 h-16 bg-emerald-500 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-green group-hover:scale-110 transition-transform">
+                          <div className="absolute inset-0 aura-green scale-150"></div>
+                          <div className="relative w-16 h-16 bg-[#10b981] rounded-[1.5rem] flex items-center justify-center text-white neon-glow-green group-hover:scale-110 transition-transform">
                              <Store size={32} />
                           </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.market}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.marketDesc}</p>
-                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">{t.marketHours}</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-40">{t.marketHours}</p>
                        </div>
                     </button>
 
                     <button onClick={() => setCurrentView('amenities')} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
                        <div className="relative">
-                          <div className="absolute inset-0 icon-aura-blue scale-150"></div>
-                          <div className="relative w-16 h-16 bg-blue-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-blue group-hover:scale-110 transition-transform">
+                          <div className="absolute inset-0 aura-blue scale-150"></div>
+                          <div className="relative w-16 h-16 bg-[#3b82f6] rounded-[1.5rem] flex items-center justify-center text-white neon-glow-blue group-hover:scale-110 transition-transform">
                              <BellRing size={32} />
                           </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.services}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.servicesDesc}</p>
-                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">Housekeeping & Teknik</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-40">Housekeeping & Teknik</p>
                        </div>
                     </button>
 
                     <button onClick={() => window.open(`tel:${hotel.reception_phone}`)} className="action-card aspect-square p-7 flex flex-col items-start justify-between text-left group">
                        <div className="relative">
-                          <div className="absolute inset-0 icon-aura-purple scale-150"></div>
-                          <div className="relative w-16 h-16 bg-fuchsia-600 rounded-[1.5rem] flex items-center justify-center text-white neon-glow-purple group-hover:scale-110 transition-transform">
+                          <div className="absolute inset-0 aura-purple scale-150"></div>
+                          <div className="relative w-16 h-16 bg-[#a855f7] rounded-[1.5rem] flex items-center justify-center text-white neon-glow-purple group-hover:scale-110 transition-transform">
                              <Headphones size={32} />
                           </div>
                        </div>
                        <div className="space-y-1">
                           <h3 className="font-black text-xl text-white uppercase tracking-tight">{t.reception}</h3>
                           <p className="text-slate-500 text-[10px] font-bold leading-tight">{t.receptionDesc}</p>
-                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-50">7/24 Canlı Destek</p>
+                          <p className="text-slate-600 text-[9px] font-black uppercase mt-1 opacity-40">7/24 Canlı Destek</p>
                        </div>
                     </button>
                  </div>
 
-                 {/* Rating Section - Improved Styling */}
+                 {/* Rate Us - Horizontal Layout Updated for 3 Items */}
                  <div className="pt-10 space-y-6">
                     <div className="flex items-center gap-2 text-slate-500 px-2">
                        <Star size={14} className="text-orange-500 fill-orange-500" />
                        <p className="text-[11px] font-black uppercase tracking-[0.3em]">{t.rateUs}</p>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                        {hotel.airbnb_url && (
-                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:border-rose-500/30 transition-all">
+                         <a href={hotel.airbnb_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:bg-rose-500/5 transition-all">
                             <div className="w-14 h-14 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform shrink-0">
                                <StarFilled size={24} fill="currentColor" />
                             </div>
                             <div className="text-left">
                                <h4 className="font-black text-white text-base uppercase tracking-tight">Airbnb</h4>
-                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">Deneyiminizi paylaşın</p>
+                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5 leading-tight">Deneyiminizi paylaşın</p>
                             </div>
                          </a>
                        )}
                        {hotel.google_maps_url && (
-                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:border-blue-500/30 transition-all">
+                         <a href={hotel.google_maps_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:bg-blue-500/5 transition-all">
                             <div className="w-14 h-14 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform shrink-0">
                                <MapPin size={24} fill="currentColor" />
                             </div>
                             <div className="text-left">
                                <h4 className="font-black text-white text-base uppercase tracking-tight">Google</h4>
-                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5">Deneyiminizi paylaşın</p>
+                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5 leading-tight">Deneyiminizi paylaşın</p>
+                            </div>
+                         </a>
+                       )}
+                       {hotel.booking_url && (
+                         <a href={hotel.booking_url} target="_blank" rel="noopener noreferrer" className="action-card p-6 flex items-center gap-5 group hover:bg-blue-600/5 transition-all">
+                            <div className="relative shrink-0">
+                               <div className="absolute inset-0 aura-blue scale-125"></div>
+                               <div className="relative w-14 h-14 rounded-full bg-blue-600/10 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
+                                  <GlobeIcon size={24} />
+                               </div>
+                            </div>
+                            <div className="text-left">
+                               <h4 className="font-black text-white text-base uppercase tracking-tight">Booking</h4>
+                               <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-0.5 leading-tight">Deneyiminizi paylaşın</p>
                             </div>
                          </a>
                        )}
@@ -319,7 +323,7 @@ const App: React.FC = () => {
                <div className="space-y-6 animate-fade-in">
                   <div className="bg-[#0f172a] p-1.5 rounded-3xl flex border border-white/5 shadow-2xl">
                      <button onClick={() => setDiningMode('food')} className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase transition-all ${diningMode === 'food' ? 'bg-orange-600 text-white shadow-xl' : 'text-slate-500'}`}>{t.food}</button>
-                     <button onClick={() => setDiningMode('market')} className={`flex-1 py-4 rounded-2xl text-[10px] font-black transition-all ${diningMode === 'market' ? 'bg-emerald-600 text-white shadow-xl' : 'text-slate-500'}`}>{t.market}</button>
+                     <button onClick={() => setDiningMode('market')} className={`flex-1 py-4 rounded-2xl text-[10px] font-black transition-all ${diningMode === 'market' ? 'bg-[#10b981] text-white shadow-xl' : 'text-slate-500'}`}>{t.market}</button>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                      {menuItems.filter(i => i.type === diningMode).map(item => (
@@ -331,7 +335,7 @@ const App: React.FC = () => {
 
              {currentView === 'amenities' && (
                <div className="space-y-6 animate-fade-in">
-                  <h2 className="text-2xl font-black text-white uppercase tracking-tight">{t.services}</h2>
+                  <h2 className="text-2xl font-black text-white uppercase tracking-tight italic">{t.services}</h2>
                   <div className="grid grid-cols-2 gap-4">
                     {activeServices.map(service => (
                       <button key={service.id} onClick={() => handleServiceRequest(service)} className="action-card aspect-square p-8 flex flex-col items-center justify-between group">
@@ -347,7 +351,7 @@ const App: React.FC = () => {
 
              {currentView === 'cart' && (
                <div className="space-y-6 animate-fade-in">
-                  <h2 className="text-2xl font-black text-white uppercase tracking-tight">Sepetim</h2>
+                  <h2 className="text-2xl font-black text-white uppercase tracking-tight italic">Sepetim</h2>
                   {cart.length === 0 ? (
                     <div className="text-center py-24 action-card px-12 text-slate-600">
                       <ShoppingBasket size={48} className="mx-auto mb-6 opacity-20" />
@@ -395,7 +399,7 @@ const App: React.FC = () => {
              <div className="w-20 h-20 bg-orange-600/10 rounded-3xl flex items-center justify-center mx-auto mb-8 neon-glow-orange">
                 <ShieldCheck size={44} className="text-orange-600" />
              </div>
-             <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tight">Onay Kodu</h3>
+             <h3 className="text-xl font-black text-white mb-2 uppercase tracking-tight italic">Onay Kodu</h3>
              <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-10">Resepsiyon tarafından verilen kodu girin</p>
              <input type="text" maxLength={4} value={authInput} onChange={e => setAuthInput(e.target.value)} className="w-full bg-[#1e293b] border-2 border-white/5 rounded-3xl p-6 text-center text-5xl font-black mb-10 outline-none text-white shadow-inner tracking-[0.2em]" placeholder="0000" />
              <div className="space-y-4">

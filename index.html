@@ -19,46 +19,45 @@
       .action-card {
         background: #0f172a;
         border: 1px solid rgba(255, 255, 255, 0.03);
-        border-radius: 2.5rem;
+        border-radius: 2.2rem;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
       }
 
-      /* Dokunma anındaki elektrikli yansıma */
+      /* Dokunulduğunda oluşan elektrikli basılma hissi */
       .action-card:active {
         transform: scale(0.96);
-        border-color: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 0 40px rgba(59, 130, 246, 0.15), inset 0 0 20px rgba(255, 255, 255, 0.02);
+        box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);
       }
 
-      /* Ultra-Neon Aura Efektleri */
-      .neon-glow-orange { box-shadow: 0 0 25px rgba(249, 115, 22, 0.4); }
-      .neon-glow-green { box-shadow: 0 0 25px rgba(16, 185, 129, 0.4); }
-      .neon-glow-blue { box-shadow: 0 0 25px rgba(59, 130, 246, 0.4); }
-      .neon-glow-purple { box-shadow: 0 0 25px rgba(168, 85, 247, 0.4); }
+      /* İkonların Arkasındaki Neon Aura (Sis) Efektleri */
+      .neon-glow-orange { box-shadow: 0 10px 30px -5px rgba(249, 115, 22, 0.6); }
+      .neon-glow-green { box-shadow: 0 10px 30px -5px rgba(16, 185, 129, 0.6); }
+      .neon-glow-blue { box-shadow: 0 10px 30px -5px rgba(59, 130, 246, 0.6); }
+      .neon-glow-purple { box-shadow: 0 10px 30px -5px rgba(168, 85, 247, 0.6); }
 
-      .icon-aura-orange { background: radial-gradient(circle, rgba(249, 115, 22, 0.3) 0%, transparent 70%); }
-      .icon-aura-green { background: radial-gradient(circle, rgba(16, 185, 129, 0.3) 0%, transparent 70%); }
-      .icon-aura-blue { background: radial-gradient(circle, rgba(59, 130, 246, 0.3) 0%, transparent 70%); }
-      .icon-aura-purple { background: radial-gradient(circle, rgba(168, 85, 247, 0.3) 0%, transparent 70%); }
+      .aura-orange { background: radial-gradient(circle, rgba(249, 115, 22, 0.25) 0%, transparent 70%); }
+      .aura-green { background: radial-gradient(circle, rgba(16, 185, 129, 0.25) 0%, transparent 70%); }
+      .aura-blue { background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 70%); }
+      .aura-purple { background: radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, transparent 70%); }
 
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
       @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(15px); }
+        from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
       }
       
       .animate-fade-in {
-        animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: fadeIn 0.4s ease-out forwards;
       }
 
       .glass-header {
         background: rgba(5, 10, 24, 0.85);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
       }
     </style>
   <script type="importmap">
