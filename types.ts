@@ -16,6 +16,9 @@ export interface Hotel {
   username?: string;
   password?: string;
   created_at?: string;
+  airbnb_url?: string;
+  google_maps_url?: string;
+  booking_url?: string;
 }
 
 export interface HotelApplication {
@@ -80,7 +83,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
 }
 
-export type ViewState = 'home' | 'dining' | 'amenities' | 'chat' | 'cart' | 'info';
+export type ViewState = 'home' | 'dining' | 'amenities' | 'cart' | 'info';
 export type PanelState = 'guest' | 'hotel_dashboard' | 'admin_dashboard' | 'landing' | 'super_login' | 'hotel_login';
 export type Language = 'tr' | 'en' | 'ar';
 

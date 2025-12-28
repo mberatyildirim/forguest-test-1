@@ -7,27 +7,27 @@
     <title>forGuest</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #f1f5f9;
-        color: #0f172a;
+        background-color: #020617;
+        color: #f8fafc;
         -webkit-tap-highlight-color: transparent;
       }
       
-      .glass {
-        background: rgba(255, 255, 255, 0.85);
+      .midnight-glass {
+        background: rgba(15, 23, 42, 0.8);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
       }
       
       .glass-panel {
-        background: rgba(255, 255, 255, 0.98);
+        background: rgba(15, 23, 42, 0.95);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(0, 0, 0, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .no-scrollbar::-webkit-scrollbar {
@@ -53,6 +53,11 @@
       .animate-fade-in-up {
         animation: fadeInUp 0.4s ease-out forwards;
       }
+
+      /* Custom Shadows */
+      .shadow-neon {
+        box-shadow: 0 0 20px rgba(249, 115, 22, 0.15);
+      }
     </style>
   <script type="importmap">
 {
@@ -68,7 +73,6 @@
 </head>
   <body>
     <div id="root"></div>
-    <!-- Script yolu / ile baslamali ki her path seviyesinde calissin -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

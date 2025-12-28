@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardList, Package, QrCode, Settings, Plus, Trash2, 
   X, Loader2, Save, Download, Edit3, Image as ImageIcon,
-  Search, MoreVertical, CheckCircle, Layers, Home, Upload, ChevronRight
+  CheckCircle, Layers, Home, MapPin, Star, ExternalLink, Printer, ShoppingBag, Bell, LogOut, Search, ToggleLeft, ToggleRight
 } from 'lucide-react';
-import { supabase, uploadFile, uploadBlob } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { MenuItem, Order, Room, Hotel, ServiceRequest, PanelState } from '../types';
 
 interface HotelPanelProps {
@@ -17,374 +17,412 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   const [view, setView] = useState<'orders' | 'menu' | 'rooms' | 'settings'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [kitchenMenu, setKitchenMenu] = useState<MenuItem[]>([]);
+  const [globalMarket, setGlobalMarket] = useState<any[]>([]);
+  const [globalServices, setGlobalServices] = useState<any[]>([]);
+  const [activeMarketIds, setActiveMarketIds] = useState<string[]>([]);
+  const [activeServiceIds, setActiveServiceIds] = useState<string[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [hotel, setHotel] = useState<Hotel | null>(null);
-  const [inventoryFilter, setInventoryFilter] = useState<'all' | 'food' | 'market'>('all');
   
-  const [isEditingMenu, setIsEditingMenu] = useState(false);
-  const [isAddingRoom, setIsAddingRoom] = useState(false);
   const [isBulkAdding, setIsBulkAdding] = useState(false);
+  const [isSingleAdding, setIsSingleAdding] = useState(false);
+  const [singleRoomNum, setSingleRoomNum] = useState('');
+  const [bulkConfig, setBulkConfig] = useState({ start: 1, end: 10 });
   const [isUploading, setIsUploading] = useState(false);
-  const [isLoadingData, setIsLoadingData] = useState(true);
-
-  const [newItem, setNewItem] = useState<Partial<MenuItem>>({ 
-    name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains'
-  });
-
-  const hotelLogoRef = useRef<HTMLInputElement>(null);
-  const menuImgRef = useRef<HTMLInputElement>(null);
+  const [inventorySubView, setInventorySubView] = useState<'kitchen' | 'market' | 'services'>('kitchen');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    if (hotelIdProp) {
-      loadAllData(hotelIdProp);
-      const channel = supabase.channel(`hotel-${hotelIdProp}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `hotel_id=eq.${hotelIdProp}` }, () => fetchOrders(hotelIdProp))
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_requests', filter: `hotel_id=eq.${hotelIdProp}` }, () => fetchServiceRequests(hotelIdProp))
-        .subscribe();
-      return () => { supabase.removeChannel(channel); };
-    }
+    if (hotelIdProp) loadAllData(hotelIdProp);
   }, [hotelIdProp]);
 
   const loadAllData = async (hId: string) => {
-    setIsLoadingData(true);
-    const { data: hotelData } = await supabase.from('hotels').select('*').eq('id', hId).single();
-    if (hotelData) setHotel(hotelData);
-    await Promise.all([fetchOrders(hId), fetchServiceRequests(hId), fetchMenu(hId), fetchRooms(hId)]);
-    setIsLoadingData(false);
+    const { data: hData } = await supabase.from('hotels').select('*').eq('id', hId).single();
+    if (hData) setHotel(hData);
+    fetchRooms(hId);
+    fetchOrders(hId);
+    fetchServiceRequests(hId);
+    fetchKitchenMenu(hId);
+    fetchGlobalData();
   };
 
-  const fetchOrders = async (hId: string) => {
-    const { data } = await supabase.from('orders').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
-    if (data) setOrders(data);
-  };
-
-  const fetchServiceRequests = async (hId: string) => {
-    const { data } = await supabase.from('service_requests').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
-    if (data) setServiceRequests(data);
-  };
-
-  const fetchMenu = async (hId: string) => {
-    const { data } = await supabase.from('menu_items').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
-    if (data) setMenuItems(data);
+  const fetchGlobalData = async () => {
+    const { data: market } = await supabase.from('global_market_items').select('*');
+    const { data: services } = await supabase.from('global_services').select('*');
+    const { data: mSettings } = await supabase.from('hotel_market_settings').select('item_id').eq('hotel_id', hotelIdProp).eq('is_active', true);
+    const { data: sSettings } = await supabase.from('hotel_service_settings').select('service_id').eq('hotel_id', hotelIdProp).eq('is_active', true);
+    
+    setGlobalMarket(market || []);
+    setGlobalServices(services || []);
+    setActiveMarketIds(mSettings?.map(s => s.item_id) || []);
+    setActiveServiceIds(sSettings?.map(s => s.service_id) || []);
   };
 
   const fetchRooms = async (hId: string) => {
-    const { data } = await supabase.from('rooms').select('*').eq('hotel_id', hId).order('room_number', { ascending: true });
-    setRooms(data || []);
+    const { data } = await supabase.from('rooms').select('*').eq('hotel_id', hId);
+    if (data) {
+      const sorted = [...data].sort((a, b) => a.room_number.localeCompare(b.room_number, undefined, {numeric: true}));
+      setRooms(sorted);
+    }
+  };
+
+  const toggleGlobalItem = async (type: 'market' | 'service', itemId: string) => {
+    const table = type === 'market' ? 'hotel_market_settings' : 'hotel_service_settings';
+    const idKey = type === 'market' ? 'item_id' : 'service_id';
+    
+    // OPTIMISTIC UI: Update state immediately for zero latency feel
+    if (type === 'market') {
+      const isCurrentlyActive = activeMarketIds.includes(itemId);
+      setActiveMarketIds(prev => isCurrentlyActive ? prev.filter(id => id !== itemId) : [...prev, itemId]);
+      
+      if (isCurrentlyActive) {
+        await supabase.from(table).delete().eq('hotel_id', hotelIdProp).eq(idKey, itemId);
+      } else {
+        await supabase.from(table).upsert({ hotel_id: hotelIdProp, [idKey]: itemId, is_active: true });
+      }
+    } else {
+      const isCurrentlyActive = activeServiceIds.includes(itemId);
+      setActiveServiceIds(prev => isCurrentlyActive ? prev.filter(id => id !== itemId) : [...prev, itemId]);
+
+      if (isCurrentlyActive) {
+        await supabase.from(table).delete().eq('hotel_id', hotelIdProp).eq(idKey, itemId);
+      } else {
+        await supabase.from(table).upsert({ hotel_id: hotelIdProp, [idKey]: itemId, is_active: true });
+      }
+    }
+  };
+
+  const handlePrintAllQR = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>QR Listesi - ${hotel?.name}</title>
+      <style>
+        body { font-family: sans-serif; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; padding: 40px; }
+        .qr-card { border: 2px solid #000; padding: 20px; text-align: center; border-radius: 15px; }
+        img { width: 100%; max-width: 180px; }
+        h3 { margin-bottom: 5px; font-size: 24px; }
+      </style></head><body>
+      ${rooms.map(r => `
+        <div class="qr-card">
+          <h3>ODA ${r.room_number}</h3>
+          <img src="${r.qr_url}" />
+          <p>${hotel?.name}</p>
+        </div>
+      `).join('')}
+      <script>window.print();</script></body></html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleSingleAdd = async () => {
+    if (!singleRoomNum) return;
+    setIsUploading(true);
+    const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${window.location.origin}/${hotelIdProp}/${singleRoomNum}`;
+    const { error } = await supabase.from('rooms').insert({ hotel_id: hotelIdProp, room_number: singleRoomNum, qr_url });
+    if (!error) { setIsSingleAdding(false); setSingleRoomNum(''); fetchRooms(hotelIdProp); }
+    setIsUploading(false);
+  };
+
+  const handleBulkAdd = async () => {
+    if (bulkConfig.start >= bulkConfig.end) return alert("Hatalı aralık!");
+    setIsUploading(true);
+    const newRooms = [];
+    for (let i = bulkConfig.start; i <= bulkConfig.end; i++) {
+      const roomNum = i.toString();
+      const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${window.location.origin}/${hotelIdProp}/${roomNum}`;
+      newRooms.push({ hotel_id: hotelIdProp, room_number: roomNum, qr_url });
+    }
+    await supabase.from('rooms').insert(newRooms);
+    setIsBulkAdding(false);
+    fetchRooms(hotelIdProp);
+    setIsUploading(false);
   };
 
   const handleUpdateHotel = async () => {
     if (!hotel) return;
     setIsUploading(true);
-    const { error } = await supabase.from('hotels').update({
-      name: hotel.name,
-      wifi_name: hotel.wifi_name,
-      wifi_pass: hotel.wifi_pass,
-      whatsapp_number: hotel.whatsapp_number,
-      checkout_time: hotel.checkout_time,
-      logo_url: hotel.logo_url,
-      banner_url: hotel.banner_url
-    }).eq('id', hotel.id);
+    const { error } = await supabase
+      .from('hotels')
+      .update({
+        name: hotel.name,
+        wifi_name: hotel.wifi_name,
+        wifi_pass: hotel.wifi_pass,
+        checkout_time: hotel.checkout_time,
+        reception_phone: hotel.reception_phone,
+        whatsapp_number: hotel.whatsapp_number,
+        banner_url: hotel.banner_url,
+        google_maps_url: hotel.google_maps_url,
+        airbnb_url: hotel.airbnb_url,
+        booking_url: hotel.booking_url,
+      })
+      .eq('id', hotel.id);
     
-    if (!error) alert("Ayarlar başarıyla güncellendi!");
-    else alert("Güncelleme hatası!");
+    if (error) alert("Hata: " + error.message);
+    else alert("Ayarlar başarıyla kaydedildi.");
     setIsUploading(false);
   };
 
-  const saveMenuItem = async () => {
-    if (!newItem.name || !hotelIdProp) return;
-    setIsUploading(true);
-    const { error } = await supabase.from('menu_items').upsert({ ...newItem, hotel_id: hotelIdProp });
-    if (!error) {
-      setIsEditingMenu(false);
-      fetchMenu(hotelIdProp);
-    }
-    setIsUploading(false);
+  const fetchOrders = async (hId: string) => {
+    const { data } = await supabase.from('orders').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
+    setOrders(data || []);
   };
 
-  const handleDownloadQR = async (room: Room) => {
-    if (!room.qr_url) return;
-    const res = await fetch(room.qr_url);
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `room-${room.room_number}-qr.png`;
-    link.click();
+  const fetchServiceRequests = async (hId: string) => {
+    const { data } = await supabase.from('service_requests').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
+    setServiceRequests(data || []);
   };
 
-  const updateStatus = async (id: string, table: 'orders' | 'service_requests', status: string) => {
-    await supabase.from(table).update({ status }).eq('id', id);
-    table === 'orders' ? fetchOrders(hotelIdProp) : fetchServiceRequests(hotelIdProp);
+  const fetchKitchenMenu = async (hId: string) => {
+    const { data } = await supabase.from('menu_items').select('*').eq('hotel_id', hId).eq('type', 'food');
+    setKitchenMenu(data || []);
   };
 
-  const filteredMenu = menuItems.filter(item => inventoryFilter === 'all' || item.type === inventoryFilter);
+  const filteredGlobalItems = useMemo(() => {
+    const list = inventorySubView === 'market' ? globalMarket : globalServices;
+    if (!searchQuery) return list;
+    return list.filter(item => (item.name || item.name_key || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [inventorySubView, globalMarket, globalServices, searchQuery]);
 
-  const combinedOrders = [
-    ...orders.map(o => ({ ...o, entryType: 'order' })),
-    ...serviceRequests.map(s => ({ ...s, entryType: 'service' }))
+  const combinedEntries = [
+    ...orders.map(o => ({ ...o, entryType: 'Sipariş' })),
+    ...serviceRequests.map(s => ({ ...s, entryType: 'Hizmet' }))
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  if (isLoadingData) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-orange-600" /></div>;
-
   return (
-    <div className="min-h-screen bg-slate-50 flex font-inter text-[13px] text-slate-700">
-      {/* Sidebar - Pro SaaS Compact */}
-      <aside className="w-56 bg-slate-900 flex flex-col sticky top-0 h-screen shadow-2xl">
-        <div className="p-5 flex items-center gap-2 border-b border-white/5 bg-slate-950/50">
+    <div className="min-h-screen bg-[#020617] text-slate-300 flex font-inter text-[13px]">
+      <aside className="w-56 bg-[#0f172a] border-r border-white/5 flex flex-col sticky top-0 h-screen">
+        <div className="p-5 flex items-center gap-2 border-b border-white/5 bg-black/20">
           <div className="w-7 h-7 bg-orange-600 rounded flex items-center justify-center text-white font-bold">f</div>
-          <span className="font-bold text-white tracking-tight">forGuest <span className="text-orange-500">Admin</span></span>
+          <span className="font-bold text-white tracking-tight uppercase text-xs">forGuest <span className="text-orange-500">Admin</span></span>
         </div>
         <nav className="flex-1 p-3 space-y-1">
-          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all font-medium ${view === 'orders' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><ClipboardList size={16}/> Siparişler</button>
-          <button onClick={() => setView('menu')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all font-medium ${view === 'menu' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Package size={16}/> Envanter</button>
-          <button onClick={() => setView('rooms')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all font-medium ${view === 'rooms' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><QrCode size={16}/> Terminaller</button>
-          <button onClick={() => setView('settings')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all font-medium ${view === 'settings' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}><Settings size={16}/> Ayarlar</button>
+          <button onClick={() => setView('orders')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${view === 'orders' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><ClipboardList size={16}/> Hareketler</button>
+          <button onClick={() => setView('menu')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${view === 'menu' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Package size={16}/> Envanter</button>
+          <button onClick={() => setView('rooms')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${view === 'rooms' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><QrCode size={16}/> Odalar</button>
+          <button onClick={() => setView('settings')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${view === 'settings' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}><Settings size={16}/> Ayarlar</button>
         </nav>
         <div className="p-3 border-t border-white/5">
-          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-white"><Home size={14}/> Siteye Dön</button>
+          <button onClick={() => onNavigate('landing', '/')} className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:text-red-500 font-bold uppercase tracking-widest text-[10px] transition-colors"><LogOut size={14}/> Çıkış Yap</button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar">
-        <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between sticky top-0 z-30 shadow-sm">
-          <div className="font-semibold text-slate-400">Yönetim / <span className="text-slate-900 capitalize font-bold">{view}</span></div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-               <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-               <span className="font-bold text-[10px] text-slate-600 uppercase tracking-wider">{hotel?.name}</span>
-            </div>
-          </div>
-        </header>
-
-        <div className="p-6 max-w-7xl mx-auto space-y-6">
-          {view === 'orders' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-bold tracking-tight">Canlı Operasyon Akışı</h2>
+      <main className="flex-1 overflow-y-auto no-scrollbar p-8">
+        {view === 'orders' && (
+          <div className="space-y-6 animate-fade-in">
+            <h2 className="text-2xl font-black uppercase tracking-tight">Canlı Akış</h2>
+            {combinedEntries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-32 text-slate-600 bg-[#0f172a] rounded-3xl border border-white/5 shadow-2xl">
+                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6"><ClipboardList size={32} className="opacity-20" /></div>
+                <p className="font-black uppercase tracking-widest text-xs">Henüz bir sipariş veya hizmet talebi bulunmuyor</p>
+                <p className="text-[10px] mt-2 opacity-60">Odalar QR kodu taradığında burada görünecektir.</p>
               </div>
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    <tr>
-                      <th className="px-5 py-3">Ünite</th>
-                      <th className="px-5 py-3">Kategori</th>
-                      <th className="px-5 py-3">İçerik Detayı</th>
-                      <th className="px-5 py-3 text-right">Tutar</th>
-                      <th className="px-5 py-3">Zaman</th>
-                      <th className="px-5 py-3 text-center">Durum</th>
-                      <th className="px-5 py-3 text-right">İşlem</th>
-                    </tr>
+            ) : (
+              <div className="bg-[#0f172a] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-black/20 border-b border-white/5 text-slate-500 font-black uppercase tracking-widest">
+                    <tr><th className="px-6 py-4">Oda</th><th className="px-6 py-4">Tip</th><th className="px-6 py-4">Detay</th><th className="px-6 py-4 text-right">Durum</th></tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {combinedOrders.map((o: any) => (
-                      <tr key={o.id} className="hover:bg-slate-50/50 group">
-                        <td className="px-5 py-3 font-bold text-slate-900">{o.room_number}</td>
-                        <td className="px-5 py-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${o.entryType === 'order' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
-                            {o.entryType === 'order' ? 'Mutfak' : 'Servis'}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-slate-500 max-w-xs truncate">
-                          {o.entryType === 'order' ? o.items.map((i:any)=>`${i.name} x${i.quantity}`).join(', ') : o.service_type}
-                        </td>
-                        <td className="px-5 py-3 text-right font-bold text-slate-900">{o.entryType === 'order' ? `₺${o.total_amount}` : '-'}</td>
-                        <td className="px-5 py-3 text-slate-400 text-xs font-medium">{new Date(o.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
-                        <td className="px-5 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${o.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
-                            {o.status}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {o.status === 'pending' && <button onClick={() => updateStatus(o.id, o.entryType === 'order' ? 'orders' : 'service_requests', 'preparing')} className="p-1.5 hover:bg-blue-50 text-blue-600 rounded transition-colors"><CheckCircle size={14}/></button>}
-                            <button className="p-1.5 hover:bg-slate-100 text-slate-400 rounded"><MoreVertical size={14}/></button>
-                          </div>
-                        </td>
+                  <tbody className="divide-y divide-white/5">
+                    {combinedEntries.map((o: any) => (
+                      <tr key={o.id} className="hover:bg-white/[0.02]">
+                        <td className="px-6 py-4 font-black text-white italic">{o.room_number}</td>
+                        <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase ${o.entryType === 'Sipariş' ? 'bg-blue-900/40 text-blue-400' : 'bg-purple-900/40 text-purple-400'}`}>{o.entryType}</span></td>
+                        <td className="px-6 py-4 text-slate-400">{o.entryType === 'Sipariş' ? (o.items || []).map((i:any)=>`${i.name} (x${i.quantity})`).join(', ') : o.service_type}</td>
+                        <td className="px-6 py-4 text-right"><span className="text-orange-500 font-black uppercase text-[10px]">{o.status}</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {view === 'menu' && (
-            <div className="space-y-4">
-               <div className="flex justify-between items-center">
-                 <div className="flex bg-slate-200/50 p-1 rounded-lg">
-                    {['all', 'food', 'market'].map(f => (
-                      <button key={f} onClick={() => setInventoryFilter(f as any)} className={`px-4 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all ${inventoryFilter === f ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500'}`}>
-                        {f === 'all' ? 'Tümü' : f === 'food' ? 'Mutfak' : 'Market'}
-                      </button>
-                    ))}
+        {view === 'menu' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center bg-[#0f172a] p-3 rounded-2xl border border-white/5 shadow-xl">
+               <div className="flex bg-black/20 p-1 rounded-xl">
+                  <button onClick={() => setInventorySubView('kitchen')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${inventorySubView === 'kitchen' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>Mutfak</button>
+                  <button onClick={() => setInventorySubView('market')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${inventorySubView === 'market' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>Market</button>
+                  <button onClick={() => setInventorySubView('services')} className={`px-6 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${inventorySubView === 'services' ? 'bg-orange-600 text-white shadow-lg' : 'text-slate-500 hover:text-white'}`}>Hizmetler</button>
+               </div>
+               {inventorySubView !== 'kitchen' && (
+                 <div className="relative w-64">
+                   <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"/>
+                   <input type="text" placeholder="Global katalogda ara..." className="w-full bg-black/20 border border-white/5 text-white rounded-xl py-2 pl-10 pr-4 outline-none focus:border-orange-500/50 text-xs font-bold" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
                  </div>
-                 <button onClick={() => { setNewItem({ name: '', description: '', price: 0, type: 'food', popular: false, is_available: true, image: '', category: 'mains' }); setIsEditingMenu(true); }} className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-orange-700 transition-all shadow-lg shadow-orange-900/10"><Plus size={14}/> Yeni Ürün</button>
-               </div>
-               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      <tr>
-                        <th className="px-5 py-3">Ürün</th>
-                        <th className="px-5 py-3">Mod</th>
-                        <th className="px-5 py-3">Kategori</th>
-                        <th className="px-5 py-3 text-right">Birim Fiyat</th>
-                        <th className="px-5 py-3 text-center">Stok</th>
-                        <th className="px-5 py-3 text-right">İşlem</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredMenu.map(item => (
-                        <tr key={item.id} className="hover:bg-slate-50/50 group">
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-3">
-                              <img src={item.image} className="w-8 h-8 rounded-md object-cover border border-slate-200 shadow-sm" />
-                              <div className="font-bold text-slate-900">{item.name}</div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3"><span className="text-[10px] font-bold text-slate-400 uppercase">{item.type}</span></td>
-                          <td className="px-5 py-3 text-slate-500 uppercase font-bold text-[10px]">{item.category}</td>
-                          <td className="px-5 py-3 text-right font-black text-slate-900">₺{item.price}</td>
-                          <td className="px-5 py-3 text-center">
-                             <div className={`w-2 h-2 rounded-full mx-auto ${item.is_available ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-slate-300'}`}></div>
-                          </td>
-                          <td className="px-5 py-3 text-right">
-                             <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => { setNewItem(item); setIsEditingMenu(true); }} className="p-1.5 hover:bg-slate-100 text-slate-400 rounded"><Edit3 size={14}/></button>
-                                <button onClick={async () => { if(confirm('Ürünü sil?')) { await supabase.from('menu_items').delete().eq('id', item.id); fetchMenu(hotelIdProp); } }} className="p-1.5 hover:bg-rose-50 text-rose-500 rounded"><Trash2 size={14}/></button>
-                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-               </div>
+               )}
             </div>
-          )}
 
-          {view === 'settings' && hotel && (
-            <div className="max-w-3xl space-y-6 animate-fade-in">
-               <div className="bg-white p-10 rounded-xl border border-slate-200 shadow-sm space-y-10">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-6">
-                    <div>
-                       <h2 className="text-xl font-bold tracking-tight">Otel Profili & Konfigürasyon</h2>
-                       <p className="text-slate-400 text-[11px] mt-1">Misafirlere görünecek tüm teknik ve görsel detaylar.</p>
-                    </div>
-                    <button onClick={handleUpdateHotel} disabled={isUploading} className="bg-slate-900 text-white px-6 py-2.5 rounded-lg font-bold text-xs flex items-center gap-2 hover:bg-orange-600 transition-all shadow-xl shadow-slate-900/10">
-                      {isUploading ? <Loader2 className="animate-spin" size={14}/> : <Save size={14}/>} Güncelle
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-x-8 gap-y-6">
-                    <div className="space-y-1.5 col-span-2">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">İşletme Adı</label>
-                       <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold text-sm" value={hotel.name} onChange={e => setHotel({...hotel, name: e.target.value})} />
-                    </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">WiFi SSID</label>
-                       <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold text-sm" value={hotel.wifi_name || ''} onChange={e => setHotel({...hotel, wifi_name: e.target.value})} />
-                    </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">WiFi Şifresi</label>
-                       <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold text-sm" value={hotel.wifi_pass || ''} onChange={e => setHotel({...hotel, wifi_pass: e.target.value})} />
-                    </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">WhatsApp Destek Hattı</label>
-                       <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold text-sm" value={hotel.whatsapp_number || ''} onChange={e => setHotel({...hotel, whatsapp_number: e.target.value})} />
-                    </div>
-                    <div className="space-y-1.5">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Check-out Saati</label>
-                       <input type="text" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold text-sm" value={hotel.checkout_time || ''} onChange={e => setHotel({...hotel, checkout_time: e.target.value})} />
-                    </div>
-                    
-                    <div className="col-span-2 pt-6 border-t border-slate-100 grid grid-cols-2 gap-6">
-                       <div className="space-y-3">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Kurumsal Logo</label>
-                          <div className="h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer group hover:border-orange-500 transition-all overflow-hidden relative">
-                             {hotel.logo_url ? <img src={hotel.logo_url} className="w-full h-full object-contain p-6" /> : <ImageIcon className="text-slate-300" size={32} />}
-                          </div>
-                       </div>
-                       <div className="space-y-3">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Banner Görseli (Geniş)</label>
-                          <div className="h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer group hover:border-orange-500 transition-all overflow-hidden relative">
-                             {hotel.banner_url ? <img src={hotel.banner_url} className="w-full h-full object-cover" /> : <ImageIcon className="text-slate-300" size={32} />}
-                          </div>
-                       </div>
-                    </div>
-                  </div>
-               </div>
-            </div>
-          )}
-
-          {view === 'rooms' && (
-            <div className="space-y-4">
-               <div className="flex justify-between items-center">
-                 <h2 className="text-lg font-bold tracking-tight">QR Terminalleri</h2>
-                 <div className="flex gap-2">
-                    <button onClick={() => setIsBulkAdding(true)} className="bg-slate-100 text-slate-700 px-3 py-1.5 rounded-md font-bold text-[11px] flex items-center gap-2 border border-slate-200 hover:bg-slate-200 transition-all"><Layers size={14}/> Toplu Oluştur</button>
-                    <button onClick={() => setIsAddingRoom(true)} className="bg-slate-900 text-white px-3 py-1.5 rounded-md font-bold text-[11px] flex items-center gap-2 hover:bg-orange-600 transition-all"><Plus size={14}/> Yeni Oda</button>
-                 </div>
-               </div>
-               <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                  {rooms.map(room => (
-                    <div key={room.id} className="bg-white p-3 rounded-lg border border-slate-200 text-center space-y-2 hover:shadow-md transition-all group relative">
-                       <p className="font-bold text-slate-900 text-sm">{room.room_number}</p>
-                       <div className="aspect-square bg-slate-50 rounded border border-slate-100 p-1">
-                          <img src={room.qr_url} className="w-full h-full object-contain" />
-                       </div>
-                       <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => handleDownloadQR(room)} className="text-slate-400 hover:text-orange-600 transition-colors"><Download size={12}/></button>
-                          <button onClick={async () => { if(confirm('Sil?')) { await supabase.from('rooms').delete().eq('id', room.id); fetchRooms(hotelIdProp); } }} className="text-slate-400 hover:text-rose-600 transition-colors"><Trash2 size={12}/></button>
-                       </div>
+            {inventorySubView === 'kitchen' && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center"><h3 className="text-xl font-black uppercase">Mutfak Menüsü</h3><button className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg"><Plus size={14}/> Yemek Ekle</button></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {kitchenMenu.map(item => (
+                    <div key={item.id} className="bg-[#0f172a] p-4 rounded-[2rem] border border-white/5 flex gap-4 items-center shadow-xl">
+                      <img src={item.image} className="w-20 h-20 rounded-2xl object-cover" />
+                      <div><p className="font-black text-white uppercase">{item.name}</p><p className="text-orange-500 font-black text-xs">₺{item.price}</p></div>
                     </div>
                   ))}
-               </div>
-            </div>
-          )}
-        </div>
-      </main>
+                </div>
+              </div>
+            )}
 
-      {/* Ürün Ekle/Düzenle - SaaS Minimal Modal */}
-      {isEditingMenu && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6">
-           <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-5 animate-fade-in border border-slate-200">
-              <div className="flex justify-between items-center border-b border-slate-50 pb-3">
-                <h3 className="font-bold text-sm uppercase tracking-tight text-slate-900">{newItem.id ? 'Ürünü Düzenle' : 'Kataloğa Ürün Ekle'}</h3>
-                <button onClick={() => setIsEditingMenu(false)} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+            {(inventorySubView === 'market' || inventorySubView === 'services') && (
+              <div className="bg-[#0f172a] rounded-2xl border border-white/5 shadow-2xl overflow-hidden">
+                <div className="divide-y divide-white/5">
+                  {filteredGlobalItems.map(item => {
+                    const isActive = inventorySubView === 'market' ? activeMarketIds.includes(item.id) : activeServiceIds.includes(item.id);
+                    return (
+                      <div key={item.id} className="p-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                        <div className="flex items-center gap-4">
+                           {inventorySubView === 'market' && <img src={item.image} className="w-10 h-10 rounded-lg object-cover bg-black/40"/>}
+                           <div>
+                              <p className={`font-black uppercase text-xs ${isActive ? 'text-white' : 'text-slate-500'}`}>{item.name || item.name_key}</p>
+                              <p className="text-[9px] font-black text-orange-500/60 uppercase">{item.category} {item.price ? `• ₺${item.price}` : ''}</p>
+                           </div>
+                        </div>
+                        <button 
+                          onClick={() => toggleGlobalItem(inventorySubView as any, item.id)}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-xl border transition-all font-black text-[9px] uppercase tracking-wider ${isActive ? 'bg-orange-600 border-orange-500 text-white shadow-lg' : 'bg-black/20 border-white/5 text-slate-500 hover:text-white'}`}
+                        >
+                          {isActive ? <ToggleRight size={18}/> : <ToggleLeft size={18}/>}
+                          {isActive ? 'Aktif' : 'Pasif'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="space-y-3">
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Ürün Adı</label>
-                    <input className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold" value={newItem.name || ''} onChange={e => setNewItem({...newItem, name: e.target.value})} />
-                 </div>
-                 <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase">Fiyat</label>
-                       <input type="number" className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-black" value={newItem.price || 0} onChange={e => setNewItem({...newItem, price: parseFloat(e.target.value) || 0})} />
-                    </div>
-                    <div className="space-y-1">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase">Departman</label>
-                       <select className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold" value={newItem.type} onChange={e => setNewItem({...newItem, type: e.target.value as any})}>
-                          <option value="food">Mutfak</option>
-                          <option value="market">Market</option>
-                       </select>
-                    </div>
-                 </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Kategori</label>
-                    <input className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-orange-500 font-bold" value={newItem.category || ''} onChange={e => setNewItem({...newItem, category: e.target.value})} placeholder="Örn: Tatlılar" />
-                 </div>
-                 <div className="flex gap-2 pt-2">
-                    <button onClick={saveMenuItem} disabled={isUploading} className="flex-1 bg-slate-900 text-white py-2.5 rounded-lg font-bold hover:bg-orange-600 transition-all text-xs uppercase tracking-widest">
-                       {isUploading ? <Loader2 className="animate-spin mx-auto" size={14}/> : 'Kaydet'}
-                    </button>
-                    <button onClick={() => setIsEditingMenu(false)} className="px-5 py-2.5 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs uppercase">İptal</button>
-                 </div>
+            )}
+          </div>
+        )}
+
+        {view === 'rooms' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="flex justify-between items-center">
+              <h2 className="text-base font-black text-white uppercase tracking-tight">Oda Listesi & QR</h2>
+              <div className="flex gap-3">
+                <button onClick={handlePrintAllQR} className="bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-all"><Printer size={14}/> Hepsini Yazdır</button>
+                <button onClick={() => setIsSingleAdding(true)} className="bg-white/5 border border-white/10 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-all"><Plus size={14}/> Oda Ekle</button>
+                <button onClick={() => setIsBulkAdding(true)} className="bg-orange-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-orange-500 shadow-lg"><Layers size={14}/> Toplu Oluştur</button>
               </div>
-           </div>
-        </div>
-      )}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+              {rooms.map(room => (
+                <div key={room.id} className="bg-[#0f172a] p-6 rounded-[2rem] border border-white/5 text-center space-y-4 group hover:border-orange-500/50 transition-all shadow-2xl">
+                  <p className="font-black text-white text-lg italic">ODA {room.room_number}</p>
+                  <div className="aspect-square bg-white rounded-2xl p-2 shadow-inner"><img src={room.qr_url} className="w-full h-full object-contain" /></div>
+                  <div className="flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => window.open(room.qr_url, '_blank')} className="text-slate-500 hover:text-white"><Download size={18}/></button>
+                    <button onClick={async () => { if(confirm('Silsin mi?')) { await supabase.from('rooms').delete().eq('id', room.id); fetchRooms(hotelIdProp); } }} className="text-slate-500 hover:text-red-500"><Trash2 size={18}/></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {view === 'settings' && hotel && (
+          <div className="max-w-3xl space-y-8 animate-fade-in">
+             <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-black uppercase tracking-tight">Tesis Ayarları</h2>
+                <button onClick={handleUpdateHotel} disabled={isUploading} className="bg-orange-600 text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-xl hover:bg-orange-500 transition-all flex items-center gap-2">
+                  {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  Kaydet
+                </button>
+             </div>
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-[#0f172a] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl space-y-6">
+                   <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-2">Genel Bilgiler</h3>
+                   <div className="space-y-4">
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Tesis Adı</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.name || ''} onChange={e => setHotel({...hotel, name: e.target.value})} />
+                      </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Banner Görsel URL</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.banner_url || ''} onChange={e => setHotel({...hotel, banner_url: e.target.value})} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">WiFi SSID</label>
+                            <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.wifi_name || ''} onChange={e => setHotel({...hotel, wifi_name: e.target.value})} />
+                         </div>
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">WiFi Şifre</label>
+                            <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.wifi_pass || ''} onChange={e => setHotel({...hotel, wifi_pass: e.target.value})} />
+                         </div>
+                      </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Checkout Saati</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.checkout_time || ''} onChange={e => setHotel({...hotel, checkout_time: e.target.value})} />
+                      </div>
+                   </div>
+                </div>
+
+                <div className="bg-[#0f172a] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl space-y-6">
+                   <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest border-b border-white/5 pb-2">İletişim & Linkler</h3>
+                   <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Resepsiyon Tel</label>
+                            <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.reception_phone || ''} onChange={e => setHotel({...hotel, reception_phone: e.target.value})} />
+                         </div>
+                         <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">WhatsApp</label>
+                            <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.whatsapp_number || ''} onChange={e => setHotel({...hotel, whatsapp_number: e.target.value})} />
+                         </div>
+                      </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><MapPin size={10}/> Google Maps URL</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.google_maps_url || ''} onChange={e => setHotel({...hotel, google_maps_url: e.target.value})} />
+                      </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Home size={10}/> Airbnb URL</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.airbnb_url || ''} onChange={e => setHotel({...hotel, airbnb_url: e.target.value})} />
+                      </div>
+                      <div className="space-y-1">
+                         <label className="text-[10px] font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Star size={10}/> Booking URL</label>
+                         <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500" value={hotel.booking_url || ''} onChange={e => setHotel({...hotel, booking_url: e.target.value})} />
+                      </div>
+                   </div>
+                </div>
+             </div>
+          </div>
+        )}
+
+        {/* Oda Ekle Modalları */}
+        {isSingleAdding && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+            <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-10 border border-white/10 text-center animate-fade-in shadow-3xl">
+              <h3 className="text-2xl font-black text-white mb-8 uppercase tracking-tight italic">Yeni Oda</h3>
+              <input type="text" placeholder="No" className="w-full p-5 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none font-black text-center text-4xl mb-8 shadow-inner focus:border-orange-500 transition-all" value={singleRoomNum} onChange={e => setSingleRoomNum(e.target.value)} />
+              <div className="flex gap-4">
+                <button onClick={() => setIsSingleAdding(false)} className="flex-1 py-4 text-slate-500 font-black uppercase text-[10px]">İptal</button>
+                <button onClick={handleSingleAdd} className="flex-1 py-4 bg-orange-600 text-white rounded-2xl font-black text-xs uppercase shadow-xl hover:bg-orange-500 active:scale-95 transition-all">Oluştur</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isBulkAdding && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+            <div className="bg-[#0f172a] w-full max-w-sm rounded-[3rem] p-10 border border-white/10 text-center animate-fade-in shadow-3xl">
+              <h3 className="text-2xl font-black text-white mb-8 uppercase tracking-tight italic">Toplu Oluştur</h3>
+              <div className="grid grid-cols-2 gap-4 mb-10 text-left">
+                <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Başlangıç</label><input type="number" className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl text-center font-black" value={bulkConfig.start} onChange={e => setBulkConfig({...bulkConfig, start: parseInt(e.target.value) || 1})} /></div>
+                <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase ml-2">Bitiş</label><input type="number" className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl text-center font-black" value={bulkConfig.end} onChange={e => setBulkConfig({...bulkConfig, end: parseInt(e.target.value) || 1})} /></div>
+              </div>
+              <button onClick={handleBulkAdd} className="w-full py-5 bg-orange-600 text-white rounded-2xl font-black text-xs uppercase shadow-2xl mb-4 hover:bg-orange-500 active:scale-95 transition-all">Başlat</button>
+              <button onClick={() => setIsBulkAdding(false)} className="text-slate-500 font-black uppercase text-[10px]">Vazgeç</button>
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 };
