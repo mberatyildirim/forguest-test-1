@@ -79,15 +79,15 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
 
     setIsBannerUploading(true);
     try {
-      // Correct bucket name as specified by user: "resimler"
+      // Correct bucket name: "resimler"
       const path = `${hotel.id}/banner_${Date.now()}`;
       const publicUrl = await uploadFile('resimler', file, path);
       
       setHotel({ ...hotel, banner_url: publicUrl });
-      alert("Görsel yüklendi. 'Ayarları Uygula' butonuna basarak değişiklikleri kaydedin.");
+      alert("Görsel yüklendi. 'Ayarları Uygula' butonuna basarak kaydedin.");
     } catch (error: any) {
       console.error("Yükleme hatası:", error);
-      alert(`Görsel yüklenirken bir hata oluştu: ${error.message || "Bilinmeyen hata"}. Lütfen 'resimler' bucket'ının PUBLIC olduğundan emin olun.`);
+      alert(`Görsel yüklenirken hata oluştu: ${error.message || "Bilinmeyen hata"}.`);
     } finally {
       setIsBannerUploading(false);
     }
@@ -154,7 +154,8 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   const handleSingleAdd = async () => {
     if (!singleRoomNum) return;
     setIsUploading(true);
-    const guestUrl = `${BASE_URL}/?ouid=${hotelIdProp}&roomNumber=${singleRoomNum}`;
+    // Updated path format: domain.com/hotelId/roomNum
+    const guestUrl = `${BASE_URL}/${hotelIdProp}/${singleRoomNum}`;
     const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(guestUrl)}`;
     const { error } = await supabase.from('rooms').insert({ hotel_id: hotelIdProp, room_number: singleRoomNum, qr_url });
     if (!error) { setIsSingleAdding(false); setSingleRoomNum(''); fetchRooms(hotelIdProp); }
@@ -167,7 +168,8 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
     const newRooms = [];
     for (let i = bulkConfig.start; i <= bulkConfig.end; i++) {
       const roomNum = i.toString();
-      const guestUrl = `${BASE_URL}/?ouid=${hotelIdProp}&roomNumber=${roomNum}`;
+      // Updated path format: domain.com/hotelId/roomNum
+      const guestUrl = `${BASE_URL}/${hotelIdProp}/${roomNum}`;
       const qr_url = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(guestUrl)}`;
       newRooms.push({ hotel_id: hotelIdProp, room_number: roomNum, qr_url });
     }
@@ -202,7 +204,8 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
   };
 
   const fetchOrders = async (hId: string) => {
-    const { data } = await supabase.from('orders').select('*').eq('hId', hId).order('created_at', { ascending: false });
+    // Fixed column name from 'hId' to 'hotel_id'
+    const { data } = await supabase.from('orders').select('*').eq('hotel_id', hId).order('created_at', { ascending: false });
     setOrders(data || []);
   };
 
@@ -460,7 +463,6 @@ const HotelPanel: React.FC<HotelPanelProps> = ({ onNavigate, hotelIdProp }) => {
                          <input className="w-full p-4 bg-[#1e293b] border border-white/5 text-white rounded-2xl outline-none focus:border-orange-500 font-bold transition-all" value={hotel.name || ''} onChange={e => setHotel({...hotel, name: e.target.value})} />
                       </div>
                       
-                      {/* Banner Upload Area - Redesigned and improved to use "resimler" bucket */}
                       <div className="space-y-1.5">
                          <label className="text-[9px] font-black text-slate-500 uppercase ml-2 tracking-widest flex items-center justify-between">
                             Tesis / Oda Görseli

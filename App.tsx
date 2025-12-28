@@ -46,23 +46,32 @@ const App: React.FC = () => {
       const newPath = path.startsWith('/') ? path : `/${path}`;
       window.history.pushState({}, '', newPath);
     } catch (e) {
-      console.warn("URL update failed due to sandbox restrictions, navigating internally.");
+      console.warn("URL update failed internally.");
     }
   };
 
   useEffect(() => {
     const handleRoute = async () => {
       const urlParams = new URLSearchParams(window.location.search);
-      const hotelIdParam = urlParams.get('ouid');
-      const roomNumberParam = urlParams.get('roomNumber');
       const pathParts = window.location.pathname.split('/').filter(p => p);
       
+      // Case 1: Path based access /hotelId/roomNumber (Priority)
+      if (pathParts.length >= 2 && pathParts[0].length > 20) {
+        setPanelMode('guest');
+        loadHotelData(pathParts[0], pathParts[1]);
+        return;
+      }
+
+      // Case 2: Query param fallback
+      const hotelIdParam = urlParams.get('ouid');
+      const roomNumberParam = urlParams.get('roomNumber');
       if (hotelIdParam && roomNumberParam) {
         setPanelMode('guest');
         loadHotelData(hotelIdParam, roomNumberParam);
         return;
       }
 
+      // Special Admin routes
       if (pathParts.includes('super-admin')) {
         setPanelMode('admin_dashboard');
         return;
@@ -224,7 +233,6 @@ const App: React.FC = () => {
                     </div>
                  </div>
 
-                 {/* Kare Butonlar ve Gelişmiş Efektler */}
                  <div className="grid grid-cols-2 gap-4">
                     <button onClick={() => { setDiningMode('food'); setCurrentView('dining'); }} className="action-card aspect-square p-7 md:p-8 flex flex-col items-start justify-between text-left group">
                        <div className="w-14 h-14 bg-orange-500/10 rounded-2xl flex items-center justify-center icon-glow-orange group-hover:scale-110 transition-transform">
