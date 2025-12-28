@@ -14,8 +14,6 @@ import {
   ChevronRight, Heart, Star as StarFilled
 } from 'lucide-react';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const App: React.FC = () => {
   const [panelMode, setPanelMode] = useState<PanelState>('landing');
   const [currentView, setCurrentView] = useState<ViewState>('home');
@@ -47,17 +45,30 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleRoute = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hotelIdParam = urlParams.get('ouid');
+      const roomNumberParam = urlParams.get('roomNumber');
       const pathParts = window.location.pathname.split('/').filter(p => p);
-      if (pathParts.includes('super-admin')) setPanelMode('admin_dashboard');
-      else if (pathParts.includes('otel-login')) setPanelMode('hotel_login');
-      else if (pathParts.includes('otel-admin')) {
+      
+      if (pathParts.includes('super-admin')) {
+        setPanelMode('admin_dashboard');
+      } else if (pathParts.includes('otel-login')) {
+        setPanelMode('hotel_login');
+      } else if (pathParts.includes('otel-admin')) {
         const hId = pathParts[pathParts.indexOf('otel-admin') + 1];
         if (hId) { setActiveHotelId(hId); setPanelMode('hotel_dashboard'); }
       } 
+      // Case 1: Path based /hotelId/roomNumber
       else if (pathParts.length >= 2) {
         setPanelMode('guest');
         loadHotelData(pathParts[0], pathParts[1]);
       } 
+      // Case 2: Query param based ?ouid=...&roomNumber=...
+      else if (hotelIdParam && roomNumberParam) {
+        setPanelMode('guest');
+        loadHotelData(hotelIdParam, roomNumberParam);
+      }
+      // Default: Landing Website
       else {
         setPanelMode('landing');
       }
@@ -153,16 +164,16 @@ const App: React.FC = () => {
           <div className="space-y-6 animate-fade-in">
              {currentView === 'home' && (
                <>
-                 {/* Hero Section */}
-                 <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0f172a] h-96 shadow-2xl">
+                 {/* Hero Section - Reduced height from h-96 to h-64 */}
+                 <div className="relative overflow-hidden rounded-[2.5rem] bg-[#0f172a] h-64 shadow-2xl">
                     <img src={hotel.banner_url || "https://images.unsplash.com/photo-1618773928121-c32242e63f39"} className="w-full h-full object-cover opacity-80" />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-transparent" />
-                    <div className="absolute bottom-0 left-0 p-8 w-full space-y-4">
+                    <div className="absolute bottom-0 left-0 p-8 w-full space-y-3">
                        <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
                           <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
                           <span className="text-white font-black uppercase text-[10px] tracking-widest">{hotel.name}</span>
                        </div>
-                       <h2 className="text-4xl font-black text-white leading-tight">Hoşgeldiniz,<br/>Sayın Misafirimiz</h2>
+                       <h2 className="text-3xl font-black text-white leading-tight">Hoşgeldiniz,<br/>Sayın Misafirimiz</h2>
                        <div className="inline-block bg-white/10 backdrop-blur-xl px-6 py-2 rounded-2xl border border-white/20">
                           <span className="text-white font-bold text-xs">Oda {roomNumber}</span>
                        </div>
